@@ -112,12 +112,15 @@ index reference rows.
   positions disagreed with the broker.
 - **Backtest Runs** — the run list shows the instrument, strategy, date
   range, starting capital, net P/L, return, closed-trade count, and win
-  rate. Click a run for final equity, drawdown, transaction costs,
-  rejected signals, readable run settings, and any data-quality notes.
-  Its trades table shows entry/exit prices, costs, and net P/L without
-  exposing the raw JSON snapshot. The trade count includes only closed
-  round trips; an open position can still contribute to marked-to-market
-  P/L while the closed-trade count is zero.
+  rate. Click a run to see starting/final equity; gross/net P/L and
+  return; winning/losing counts, averages, win rate, and profit factor;
+  drawdown amount/percentage; average holding time; Sharpe/Sortino;
+  longest win/loss streaks; costs, exposure, rejected signals, and run
+  duration. The setup and data-quality notes are readable fields, not a
+  raw JSON snapshot. Return bars compare runs in the current list. The
+  trades table shows completed round trips with entry/exit prices, gross
+  and net P/L, and costs. An open position can contribute to marked-to-
+  market P/L while the closed-trade count is zero.
 - **Paper Sessions** — the status/summary of every paper-trading session
   you've started.
 

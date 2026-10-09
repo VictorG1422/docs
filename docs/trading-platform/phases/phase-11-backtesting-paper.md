@@ -257,6 +257,18 @@ Browser
   need to be presented as readable metrics, setup details, warnings, and
   simulated-trade rows rather than raw JSON columns.
 
+The Backtest Runs view summarizes each run by instrument, strategy,
+period, status, starting capital, net P/L, return, closed-trade count,
+and win rate. Selecting a run displays all persisted performance metrics:
+starting/final equity; gross/net P/L and return; wins/losses and their
+averages; win rate and profit factor; drawdown amount/percentage; average
+holding time; Sharpe/Sortino; consecutive win/loss streaks; transaction
+costs; exposure; rejected trade intents; and run duration. Setup values,
+data-quality warnings, and errors are rendered as readable fields and
+notes. Return bars compare runs in the current result list. The trade
+table includes completed round trips only; final equity and net P/L may
+also include an open position marked to market at the end of the run.
+
 **What's exposed:** health (`/api/health`), instruments + candles,
 signals/orders/positions/trades (each enriched with its instrument's
 `tradingsymbol`/token via `api/queries.py::instrument_extras_by_row_id()`

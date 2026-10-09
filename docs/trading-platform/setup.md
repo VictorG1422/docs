@@ -73,6 +73,7 @@ from the secret -- useful for local development with no AWS access at all.
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | *(none)* | AWS credentials (omit to fall back to the default boto3 credential chain, e.g. an IAM role). Read from `.env`/environment only -- **never** secret-sourced (circular). |
 | `S3_BUCKET_NAME` | *(empty)* | Bucket used for snapshots/archival storage. |
 | `AWS_SECRETS_NAME` | `victor/zerodha/kite` | Name of the single AWS Secrets Manager secret holding every other value in this table. Read from `.env`/environment only. |
+| `DASHBOARD_ADMIN_TOKEN` | *(empty)* | Environment-only token required to save dashboard risk/scoring settings. Not sourced from AWS Secrets Manager; an empty value disables editing. |
 | `OPTIONS_WATCHLIST` | *(empty)* | Comma-separated underlying symbols (index/stock) that trade via options (CE/PE), e.g. `NIFTY,BANKNIFTY`. Runs simultaneously alongside `EQUITY_WATCHLIST` -- see [`resolve_instrument_mode`](#aws-secrets-manager). |
 | `EQUITY_WATCHLIST` | *(empty)* | Comma-separated underlying (stock) symbols that trade as direct cash equity instead of an option, e.g. `RELIANCE,TCS`. A symbol can only be in one of the two watchlists (validated at startup). |
 | `SCORING_WEIGHT_<PATTERN_NAME>` | *(unset)* | One flat key per pattern/indicator (e.g. `SCORING_WEIGHT_HEAD_AND_SHOULDERS=40`) overrides that entry in `scoring._DEFAULT_WEIGHTS` -- see [`ScoringConfig.from_settings`](#aws-secrets-manager). |

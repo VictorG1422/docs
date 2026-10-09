@@ -609,3 +609,24 @@ SIMULATED PORTFOLIO
 ```
 
 STOP AFTER PHASE 11.
+
+---
+
+## Addendum — read-only dashboard (external idea, not part of the phase roadmap)
+
+This was raised separately, after Phase 11 was already complete, as the
+project owner's own idea for viewing the system's data -- explicitly not
+"Phase 12" (that name is already reserved above for a later, unrelated
+Production & Live-Trading Readiness phase). Folded into Phase 11 here
+rather than given its own phase number.
+
+> Inside trading platform repo, create frontend application to see required
+> and production grade visible data from database. It just use jQuery and
+> HTML/CSS, no more multiple languages, just simple frontend application.
+> Must be connected with backend Python application that should deliver
+> output of all required API calls from frontend. Create frontend and
+> backend application and organize all folders in production standard.
+> Then update all the documents.
+>
+> Follow-up: also render the frontend itself in Python (not only serve it
+> as a static file) if possible.

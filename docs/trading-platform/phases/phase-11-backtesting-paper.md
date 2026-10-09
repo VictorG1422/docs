@@ -198,4 +198,92 @@ that no amount of unit testing had caught:
 See the [How-To Guide](../how-to.md) for the practical, step-by-step
 version of running a backtest or paper session without hitting these.
 
+## Addendum — dashboard and editable settings (frontend + backend API)
+
+This wasn't part of the original Phase 11 prompt -- it's a separate,
+external idea the project owner asked for afterward ("let me actually
+*see* this data"), folded into Phase 11 here rather than given its own
+phase number, since "Phase 12" was already reserved in the original
+roadmap for a later, unrelated "Production & Live-Trading Readiness"
+phase (see `specs/08-phase8.md`/`specs/09-phase9.md`/`specs/10-phase10.md`).
+
+```text
+Browser
+  -> GET / (server-rendered HTML, trading_system/api/app.py + Jinja2,
+            frontend/templates/index.html)
+  -> GET /static/... (CSS + jQuery, frontend/static/)
+  -> GET /api/... (FastAPI JSON endpoints, trading_system/api/routers/)
+  -> the SAME PostgreSQL database every other phase already writes to
+```
+
+**Why this shape:**
+
+- **Trading actions remain out of scope.** The dashboard has no code path
+  into `OrderExecutionEngine`, `RiskEngine`, or broker order calls. Its
+  only write route is a token-protected settings update; settings are
+  allow-listed, validated, persisted in PostgreSQL, and append an audit
+  row for each change.
+- **Scores and trades remain separate records.** Existing closed-trade
+  details are served from `trades`; normalized scoring results are
+  stored in the new `score_snapshots` table and linked to their signal.
+  `/api/scores` includes the instrument symbol and token.
+- **Overview metrics use durable records.** Filled orders, open
+  positions, closed-trade P/L, win ratio, and failed orders are queried
+  from PostgreSQL. Available account cash is fetched live from Kite's
+  equity margins endpoint; it is not represented as a database value and
+  is shown unavailable when Kite cannot supply it.
+- **Settings apply on process start.** Dashboard overrides are loaded
+  before trading components are constructed. They do not hot-reload; the
+  trading process must restart. `DASHBOARD_ADMIN_TOKEN` is environment-
+  only, and an unset token disables edits. The dashboard's same-origin
+  UI sends the token in `X-Dashboard-Token`.
+- **The page is rendered in Python, not just served as a static file.**
+  `trading_system/api/app.py::dashboard_home()` renders
+  `frontend/templates/index.html` through Jinja2
+  (`fastapi.templating.Jinja2Templates`), passing a title/version/
+  generated-at timestamp from Python into the page -- provable by the
+  "Rendered by FastAPI + Jinja2 at ..." footer on every page load. Only
+  the CSS and jQuery script are plain static files, served from
+  `frontend/static/` at `/static/...`.
+- **Plain jQuery, not a frontend framework**, per the explicit
+  requirement -- no build step, bundler, or package manager on the
+  client side.
+- **Generic over hand-written per-table schemas.** `api/serialization.py::row_to_dict()`
+  converts any ORM row's mapped columns into a JSON-safe dict generically
+  (via `sqlalchemy.inspect()` + FastAPI's own `jsonable_encoder`) instead
+  of maintaining 15+ near-duplicate response schemas by hand. The
+  frontend mirrors this: `renderTable()` in `app.js` builds a table's
+  columns from whatever keys a response actually contains, so a new
+  field or endpoint never requires a frontend code change.
+
+**What's exposed:** health (`/api/health`), instruments + candles,
+signals/orders/positions/trades (each enriched with its instrument's
+`tradingsymbol`/token via `api/queries.py::instrument_extras_by_row_id()`
+-- never a bare instrument UUID), risk decisions + trade intents,
+reconciliation runs + their order/position mismatches, and backtest runs
++ their trades + paper sessions. The dashboard addendum also exposes
+`/api/scores`, `/api/dashboard/metrics`, and settings GET/PUT endpoints.
+The PUT endpoint requires `DASHBOARD_ADMIN_TOKEN`; setting overrides and
+audit records are stored in `dashboard_settings` and
+`dashboard_setting_audit`. Every list is most-recent-first and bounded by
+a `limit` (`api/queries.py::MAX_LIMIT`, 500).
+
+**Run it:** `python scripts/run_dashboard.py`, then open
+`http://127.0.0.1:8000/`. See the
+[How-To Guide](../how-to.md#how-to-view-the-dashboard) for the practical
+walkthrough.
+
+**Testing note:** FastAPI's `TestClient` executes a request on a
+different thread than the test itself. The shared
+`tests/unit/conftest.py::db_session` fixture's SQLite engine is bound to
+a single thread by default, so `tests/unit/test_api.py` uses its own
+engine/session fixture with `StaticPool` + `check_same_thread=False`
+instead. API tests cover health, trading records, normalized score
+snapshots, KPI calculations, token-protected settings writes, validation,
+audit rows, and runtime override precedence, along with the existing
+backtest/reconciliation/dashboard routes. The current migration has not
+been applied to a real database as part of this addendum; apply
+`alembic upgrade head` before using the new score/settings tables. The
+full unit suite currently passes with 577 tests.
+
 See the original prompt: [specs/11-phase11.md](../specs/11-phase11.md).

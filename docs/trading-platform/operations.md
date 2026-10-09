@@ -35,6 +35,27 @@ any is unreachable) -- see
 [Safety Mechanisms & Roadmap](safety-and-limitations.md#what-remains-to-be-implemented)
 for what later phases add on top of this foundation.
 
+## Running the dashboard
+
+```powershell
+python scripts/run_dashboard.py
+```
+
+Serves the dashboard at `http://127.0.0.1:8000/` -- the page itself is
+server-rendered in Python (Jinja2, `frontend/templates/`),
+with its CSS/jQuery served as static assets (`frontend/static/`) and
+backed by a small FastAPI JSON API (`src/trading_system/api/`) reading
+the same PostgreSQL database every other part of the application writes
+to. It displays trading records and scores and provides a token-protected
+settings editor; it cannot place orders or approve trades. Set
+`DASHBOARD_ADMIN_TOKEN` in the dashboard process environment to enable
+editing. Saved settings are audited in PostgreSQL and apply to trading
+processes after restart. See the
+[How-To Guide](how-to.md#how-to-view-the-dashboard) for what each section
+shows, and the "Dashboard addendum" section of
+[Phase 11](phases/phase-11-backtesting-paper.md) for the full design
+write-up. Supports `--host`, `--port`, and `--reload` (development only).
+
 ## Running with Docker
 
 ```powershell

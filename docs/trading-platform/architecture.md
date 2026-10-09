@@ -82,8 +82,8 @@ Key design decisions behind the real pipeline:
   snapshot of the market and returns `BUY`, `SELL`, or `None`. It has no
   access to the broker, the database, or Redis -- which makes a strategy
   trivial to unit-test and impossible to accidentally wire into live
-  order placement.
-- **Execution is a one-way gate, not a toggle**: reaching a real Kite
+  └── logs/                        # local scratch data (gitignored contents)
+  ```
   order requires a persisted, risk-approved `TradeIntent`
   *and* three separate environment settings all agreeing
   (`ORDER_EXECUTION_ENABLED=true`, `APP_ENV=production`,
@@ -137,11 +137,23 @@ trading_platform/
 │   │   ├── s3.py
 │   │   └── db/                   # Phase 2: ORM models, repositories
 │   ├── models/                  # Tick, Instrument, Signal, Order, Position
+│   ├── api/                      # Phase 11 addendum: dashboard and protected settings API
+│   │   ├── app.py                 # app factory, renders frontend/templates/, includes routers
+│   │   ├── dependencies.py        # Postgres/Redis/Kite singletons + DB session
+│   │   ├── serialization.py       # generic ORM row -> JSON dict
+│   │   ├── queries.py             # generic "list recent" + instrument enrichment
+│   │   └── routers/               # health, market, trading, risk, reconciliation, backtests
 │   ├── utils/                   # structured logging, market-time utilities
 │   └── exceptions/               # typed exception hierarchy
+├── frontend/                    # Phase 11 addendum: dashboard (Python/Jinja2 + jQuery)
+│   ├── templates/index.html      # server-rendered by trading_system.api.app
+│   └── static/
+│       ├── css/style.css
+│       └── js/app.js
 ├── scripts/
 │   ├── download_instruments.py
-│   └── health_check.py
+│   ├── health_check.py
+│   └── run_dashboard.py          # Phase 11 addendum: serve the dashboard (uvicorn)
 ├── tests/
 │   ├── conftest.py
 │   ├── unit/
@@ -149,3 +161,5 @@ trading_platform/
 ├── data/                        # local scratch data (gitignored contents)
 └── logs/                        # local logs (gitignored contents)
 ```
+
+Generated data and logs are gitignored.

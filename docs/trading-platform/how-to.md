@@ -62,6 +62,60 @@ updates existing ones, it never deletes your trade history.
 > real, tradable instruments. If you want to analyze "the index", use
 > one of those as a stand-in. See the worked example below.
 
+## How to view the dashboard
+
+Before running a backtest or paper session blind, it's worth knowing you
+can *see* the data directly in a browser instead of reading raw log
+lines or querying the database by hand:
+
+```powershell
+python scripts/run_dashboard.py
+```
+
+Open `http://127.0.0.1:8000/` in any browser. The dashboard reads its
+trading records from PostgreSQL and has a protected editor for the
+allow-listed risk and scoring settings. It cannot place orders or approve
+trades. Use the sidebar to switch between:
+
+- **Overview** — filled trades, open positions, realized and unrealized
+  P/L, win ratio, failed/pending orders, and activity counts. Available
+  account cash is fetched live from Kite and shown as unavailable if the
+  broker balance cannot be retrieved.
+- **Scores** — normalized score snapshots stored separately from signals
+  and trades, including instrument symbols and scoring matches.
+- **Trades** — closed trade details from the existing `trades` table.
+- **Risk & Scoring Settings** — editable options/equity watchlists, risk
+  limits, trading hours, stop-loss parameters, scoring thresholds, and
+  pattern/indicator weights. Changes are saved to PostgreSQL and take
+  effect in trading processes after restart.
+
+To enable editing, set `DASHBOARD_ADMIN_TOKEN` in the dashboard process
+environment and restart it. Enter that token in the settings section
+before saving. Keep it secret: it authorizes changes to trading risk and
+scoring configuration. Editing remains disabled when the variable is
+empty. Apply the database migration first with `alembic upgrade head` so
+the score and settings tables exist.
+
+- **Instruments** / **Candles** — what's been synced, and recent price
+  history for a specific instrument token.
+- **Signals**, **Orders**, **Positions** — the actual
+  trading activity, most recent first.
+- **Risk Decisions** / **Trade Intents** — why a signal was approved or
+  rejected, and what was sized.
+- **Reconciliation Runs** — click a run to see exactly which orders or
+  positions disagreed with the broker.
+- **Backtest Runs** — click a run to see every simulated trade it
+  produced.
+- **Paper Sessions** — the status/summary of every paper-trading session
+  you've started.
+
+The three colored dots next to the logo show whether PostgreSQL, Redis,
+and your Kite connection are currently healthy (the same check as
+`scripts/health_check.py`) and refresh automatically every 20 seconds.
+
+Stop it with `Ctrl+C` like any other script here — it holds no state of
+its own and is always safe to stop and restart.
+
 ## How to run a backtest
 
 A backtest replays **past** price data through the exact same
@@ -208,19 +262,22 @@ for the current state of this).
 
 ## How to change settings
 
-Every setting the system reads — your broker login, database/cache
-connection, every risk limit, which instruments to watch, logging
-level — comes from **one place**, in this order of preference:
+Settings come from these sources, in order of precedence:
 
-1. **AWS Secrets Manager** (one secret, `victor/zerodha/kite` by
-   default) — if a value is present here, it wins. This is meant for a
-   shared/running deployment, where you want to change a setting without
-   editing a file or restarting a server manually.
-2. **Your local `.env` file** — used for anything not found in the
-   secret, and the easiest way to make a change on your own machine.
+1. **Dashboard database overrides** — for the allow-listed watchlists,
+  risk and scoring settings edited in the dashboard. These are loaded
+  when each trading process starts and override corresponding
+  environment values.
+2. **AWS Secrets Manager** (one secret, `victor/zerodha/kite` by
+  default) — supplies deployment configuration when a database
+  override does not exist.
+3. **Your local `.env` file** — used for values not supplied by the
+  secret, and the easiest way to configure a local machine.
 
-**Either way, changes only take effect the next time the application
-starts** — nothing is reloaded automatically while it's running.
+Dashboard edits are validated and audited in PostgreSQL. Restart the
+trading process for them to take effect; settings are not hot-reloaded.
+The dashboard admin token is environment-only and is never stored in
+PostgreSQL or sourced from AWS Secrets Manager.
 
 ### Settings you'll most commonly want to change
 

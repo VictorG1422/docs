@@ -62,4 +62,4 @@ top of the last. For each phase, two documents are kept:
 | 8 | Risk & position management |
 | 9 | Order execution |
 | 10 | Broker reconciliation & state consistency |
-| 11 | Backtesting & paper trading engine |
+| 11 | Backtesting & paper trading engine (+ dashboard and editable-settings addendum) |

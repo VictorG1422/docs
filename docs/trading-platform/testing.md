@@ -32,7 +32,15 @@ strategy). Phase 8 risk-engine tests (`tests/unit/test_risk_policy.py`,
 `test_position_sizer.py`, `test_account_state.py`, `test_risk_state_store.py`,
 `test_stop_loss.py`, `test_risk_engine.py`) use the same in-memory SQLite/`fakeredis` doubles
 plus a scripted `AccountStateProvider` test double (never a real broker/
-account balance). Integration tests (`tests/integration/`) are
+account balance). Phase 11's dashboard and editable-settings addendum
+tests (`tests/unit/test_api.py`) use FastAPI's `TestClient` with every
+dependency overridden -- an in-memory SQLite session (its own fixture,
+not the shared one, since `TestClient` runs requests on a different
+thread -- see [Phase 11](phases/phase-11-backtesting-paper.md)) and
+trivial fakes for Postgres/Redis/Kite; never a real connection. They
+cover normalized scores, metrics, protected settings writes, validation,
+auditing, and runtime override precedence. Integration tests
+(`tests/integration/`) are
 skipped by default since they require real Postgres/Redis instances --
 `test_storage_integration.py` covers Phase 2/3 connectivity,
 `test_kite_market_data_integration.py` covers the Phase 4/5 instrument-sync/
@@ -56,4 +64,5 @@ pytest --cov-report=html     # generate an HTML coverage report in htmlcov/
 ruff check .                 # lint
 ```
 
-As of Phase 11, the full unit suite has **561 passing tests**.
+Run `pytest` from the repository root for the current authoritative
+passing-test count.

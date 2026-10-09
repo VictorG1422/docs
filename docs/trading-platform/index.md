@@ -5,43 +5,55 @@ A production-oriented, modular-monolith algorithmic trading system for
 
 Code repository: [VictorG1422/trading_platform](https://github.com/VictorG1422/trading_platform)
 
-> **This repository currently contains the application framework only.**
-> The actual entry/exit trading strategy is **not implemented** -- it is
-> explicitly left as `TODO` so it can be plugged in later without
-> restructuring the codebase. Phase 9 execution accepts only persisted,
-> risk-approved TradeIntents and remains disabled by default; it does not
-> make the strategy run or generate trades. Phase 10 reconciles existing
-> broker/PostgreSQL/Redis state after the fact -- it never generates a
-> signal or places an order either. Phase 11 backtests/paper-trades
-> whatever strategy is configured against historical/live data -- it
-> never places a real broker order either (see [Phase 11](phases/phase-11-backtesting-paper.md)).
+!!! note "Current status"
+    The application framework is complete, but the actual entry/exit
+    trading strategy is not. That's intentional -- see
+    [Safety Mechanisms & Roadmap](safety-and-limitations.md#what-remains-to-be-implemented)
+    for exactly what's left and why. Everything ships safe-by-default:
+    paper trading, with live order execution gated off until a strategy
+    exists and three separate environment flags are set.
+
+## New here? Read this first
+
+[**Flow & Worked Examples**](flow-and-examples.md) explains, with a
+diagram and real-number walkthroughs, exactly what happens from the
+moment a price tick arrives to the moment a trade is opened, rejected, or
+double-checked against the broker. Read that page before anything else
+below -- it will make every other page easier to follow.
 
 ## Documentation map
 
-- [Architecture & Data Flow](architecture.md) -- end-to-end tick/signal/order
-  pipeline, instrument/underlying support, and repository layout.
-- [Module Reference](module-reference.md) -- a table of every module and its
-  responsibility.
-- [Setup & Configuration](setup.md) -- installation, every environment
-  variable, and the AWS Secrets Manager integration.
-- [Operations](operations.md) -- running in paper mode, Docker, PostgreSQL/
-  Redis setup, migrations, utility scripts, and logging.
-- [Testing](testing.md) -- how to run unit/integration tests.
-- [Safety Mechanisms & Roadmap](safety-and-limitations.md) -- built-in safety
-  guarantees and what remains to be implemented.
-- [Strategy Specification](strategy-specification.md) -- the (currently
-  unfilled) template a real trading strategy must be specified against.
-- **Phase build log** -- the original phase prompts ([Phase Specs](specs/00-project-initialization.md))
-  and the detailed write-up of what was actually built in each phase
-  ([Phase Writeups](phases/phase-01-foundation.md)):
-  - Phase 1 -- Configuration, Logging & Application Foundation
-  - Phase 2 -- PostgreSQL Database Layer
-  - Phase 3 -- Redis State & Cache Layer
-  - Phase 4 -- Broker Integration & Market Data Foundation
-  - Phase 5 -- Instrument Discovery & Option Chain Foundation
-  - Phase 6 -- Market Data & Technical Analysis Engine Foundation
-  - Phase 7 -- Trading Strategy & Signal Engine
-  - Phase 8 -- Risk & Position Management
-  - Phase 9 -- Order Execution
-  - Phase 10 -- Broker Reconciliation & State Consistency
-  - Phase 11 -- Backtesting & Paper Trading Engine
+| Page | What it covers |
+| --- | --- |
+| [Flow & Worked Examples](flow-and-examples.md) | The end-to-end pipeline, explained once with a diagram, then walked through with four concrete scenarios. |
+| [Architecture & Data Flow](architecture.md) | Design decisions, instrument/underlying support, and repository layout. |
+| [Module Reference](module-reference.md) | Every source file and what it's responsible for. |
+| [Setup & Configuration](setup.md) | Installation, every environment variable, and the AWS Secrets Manager integration. |
+| [Operations](operations.md) | Running in paper mode, Docker, PostgreSQL/Redis setup, migrations, scripts, logging. |
+| [Testing](testing.md) | How to run the unit and integration test suites. |
+| [Safety Mechanisms & Roadmap](safety-and-limitations.md) | Built-in safety guarantees, and what's left to build. |
+| [Strategy Specification](strategy-specification.md) | The fill-in-the-blanks template a real strategy must be specified against. |
+
+## Phase build log
+
+The project was built in 11 numbered phases, each adding one layer on
+top of the last. For each phase, two documents are kept:
+
+- **What was asked for** -- the original prompt, saved verbatim under
+  [Phase Specs](specs/00-project-initialization.md).
+- **What was actually built** -- a detailed write-up of the result, under
+  [Phase Writeups](phases/phase-01-foundation.md).
+
+| Phase | Theme |
+| --- | --- |
+| 1 | Configuration, logging & application foundation |
+| 2 | PostgreSQL database layer |
+| 3 | Redis state & cache layer |
+| 4 | Broker integration & market data foundation |
+| 5 | Instrument discovery & option chain foundation |
+| 6 | Market data & technical analysis engine |
+| 7 | Trading strategy & signal engine |
+| 8 | Risk & position management |
+| 9 | Order execution |
+| 10 | Broker reconciliation & state consistency |
+| 11 | Backtesting & paper trading engine |

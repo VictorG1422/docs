@@ -54,76 +54,55 @@ beyond the most liquid names.
 
 ## Architecture & data flow
 
-```
-Kite WebSocket
-      │
-      ▼
-WebSocket Handler (broker/websocket.py)
-      │  raw ticks
-      ▼
-Tick Processor (market_data/tick_processor.py)  ──▶  Market State
-      │  normalized Tick                                   │
-      ▼                                                    ▼
-Strategy (strategy/base.py)  ◀───────────────── Option Chain / Instruments
-      │  Signal
-      ▼
-Risk Manager (risk/risk_manager.py)
-      │  approved Signal
-      ▼
-Order Manager (execution/order_manager.py)
-      │  Order
-      ▼
-Execution Handler ──┬── Paper Execution (default, simulated fills)
-                     └── Live Execution (Kite Connect, TRADING_MODE=live only)
-      │
-      ▼
-Position Manager (execution/position_manager.py)
-```
+!!! tip "Looking for the step-by-step pipeline?"
+    See [Flow & Worked Examples](flow-and-examples.md) for a diagram and
+    four concrete walkthroughs of how a price tick becomes a trade. This
+    section covers the *design decisions* behind that pipeline instead of
+    repeating the steps.
 
-Step by step, a tick's journey through the system:
+**Two pipelines exist in this codebase, and only one of them matters in
+practice.** Phase 1 shipped an early placeholder pipeline (`Strategy` ABC
+→ `RiskManager` → `OrderManager`) to prove the application's lifecycle
+worked before any real logic existed. Phase 7 onward replaced it with the
+real, fully tested pipeline (`BaseStrategy` → `StrategyEngine` →
+`RiskEngine` → `OrderExecutionEngine`) described in
+[Flow & Worked Examples](flow-and-examples.md) -- that is the one every
+current phase builds on. The Phase 1 placeholder still exists for
+backward compatibility and is paper-only; nothing new should be built
+against it.
 
-1. `KiteWebSocketClient` (`broker/websocket.py`) connects to Kite's
-   streaming API and receives raw tick payloads for subscribed
-   instrument tokens.
-2. Raw ticks are converted into the normalized `Tick` model
-   (`models/tick.py`) and handed to `TickProcessor.process()`.
-3. `TickProcessor` updates the thread-safe `MarketState`
-   (current + previous tick per instrument) and fans the tick out to
-   every registered listener, isolating exceptions so one bad listener
-   never breaks the pipeline.
-4. The `Strategy` (currently `PlaceholderStrategy`) receives the tick via
-   `on_tick`/`on_market_data` and may call `generate_signal()`, returning
-   a `Signal` (`models/signal.py`) or `None`. Strategies never touch the
-   broker or execution layer.
-5. `RiskManager.validate_signal()` checks the signal against daily-loss,
-   trade-count, duplicate-signal, and open-position-size limits before
-   it is allowed to become an order.
-6. The legacy `OrderManager.submit_signal()` path is paper-only and kept
-  for compatibility; its live handler now fails closed.
-7. Phase 9 `OrderExecutionEngine.execute(intent)` validates a persisted,
-  risk-approved `TradeIntent` and calls the Kite broker only through the
-  explicit gated `KiteBrokerAdapter` path.
-8. Broker acknowledgement is recorded as `SUBMITTED`, never `FILLED`.
-  `refresh_status(intent_id)` records confirmed fills and updates the
-  Redis position lifecycle only after a fill is reported.
-
-Key design decisions:
+Key design decisions behind the real pipeline:
 
 - **Broker abstraction** (`broker/base.py::Broker`): the rest of the app
   never imports `kiteconnect` directly outside the `broker/` package.
-- **Execution boundary**: the legacy `OrderManager` is paper-only.
-  Phase 9's `OrderExecutionEngine` is the only supported live-order route;
-  it requires a persisted approved intent and explicit environment gates.
-- **Strategy interface** (`strategy/base.py::Strategy`): observes ticks
-  and market state, returns `Signal | None`. Contains no order-placement
-  logic.
-- **Storage split**: PostgreSQL for durable business state (orders,
-  positions, trades, signals, instruments), Redis for fast-changing
-  state (current ticks, locks, duplicate-order protection), S3 for bulk
-  snapshots/archives. High-frequency ticks are **not** written to
-  PostgreSQL.
-- **TradingEngine** (`engine.py`): orchestrates startup/shutdown of all
-  components; contains no business logic itself.
+  Swapping brokers later would mean writing one new adapter, not
+  rewriting the strategy/risk/execution layers.
+- **A strategy only ever returns an opinion, never places an order**
+  (`strategy/base.py::BaseStrategy`): `evaluate()` takes a read-only
+  snapshot of the market and returns `BUY`, `SELL`, or `None`. It has no
+  access to the broker, the database, or Redis -- which makes a strategy
+  trivial to unit-test and impossible to accidentally wire into live
+  order placement.
+- **Execution is a one-way gate, not a toggle**: reaching a real Kite
+  order requires a persisted, risk-approved `TradeIntent`
+  *and* three separate environment settings all agreeing
+  (`ORDER_EXECUTION_ENABLED=true`, `APP_ENV=production`,
+  `TRADING_MODE=live`). Missing any one of the three keeps every order
+  simulated, regardless of what the strategy decides.
+- **Storage is split by how fast and how durable the data needs to be**:
+  PostgreSQL holds everything that must survive a restart and be
+  auditable (orders, positions, trades, signals, instruments); Redis
+  holds everything that's read constantly but can be safely rebuilt
+  (latest ticks, locks, duplicate-signal guards); S3 is for bulk
+  snapshots. Raw high-frequency ticks are deliberately **not** written to
+  PostgreSQL -- only completed candles are.
+- **`TradingEngine` (`engine.py`) is a wiring layer, not a decision
+  maker**: it constructs every component and exposes explicit methods
+  like `execute_trade_intent()`, but nothing in it decides *when* to call
+  them -- that stays an explicit, deliberate choice made by whatever
+  wires the engine up (see
+  [Safety Mechanisms & Roadmap](safety-and-limitations.md#what-remains-to-be-implemented)).
+
 
 ## Repository layout
 

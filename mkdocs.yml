@@ -1,0 +1,79 @@
+site_name: Victor's Dev Docs
+site_description: Personal development documentation hub
+site_url: https://victorg1422.github.io/docs/
+repo_url: https://github.com/VictorG1422/docs
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Trading Platform:
+      - Overview: trading-platform/index.md
+      - Architecture & Data Flow: trading-platform/architecture.md
+      - Module Reference: trading-platform/module-reference.md
+      - Setup & Configuration: trading-platform/setup.md
+      - Operations (Docker/Postgres/Redis/Logging): trading-platform/operations.md
+      - Testing: trading-platform/testing.md
+      - Safety Mechanisms & Roadmap: trading-platform/safety-and-limitations.md
+      - Strategy Specification: trading-platform/strategy-specification.md
+      - Phase Specs:
+          - "00 — Project Initialization": trading-platform/specs/00-project-initialization.md
+          - "Phase 1 — Foundation": trading-platform/specs/01-phase1.md
+          - "Phase 2 — PostgreSQL": trading-platform/specs/02-phase2.md
+          - "Phase 3 — Redis": trading-platform/specs/03-phase3.md
+          - "Phase 4 — Broker & Market Data": trading-platform/specs/04-phase4.md
+          - "Phase 5 — Instrument Discovery & Option Chain": trading-platform/specs/05-phase5.md
+          - "Phase 6 — Market Data & TA Engine": trading-platform/specs/06-phase6.md
+          - "Phase 7 — Strategy & Signal Engine": trading-platform/specs/07-phase7.md
+          - "Phase 8 — Risk & Position Management": trading-platform/specs/08-phase8.md
+          - "Phase 9 — Order Execution": trading-platform/specs/09-phase9.md
+          - "Phase 10 — Broker Reconciliation": trading-platform/specs/10-phase10.md
+          - "Phase 11 — Backtesting & Paper Trading": trading-platform/specs/11-phase11.md
+          - Phase Writeups:
+              - "Phase 1": trading-platform/phases/phase-01-foundation.md
+              - "Phase 2": trading-platform/phases/phase-02-database.md
+              - "Phase 3": trading-platform/phases/phase-03-redis.md
+              - "Phase 4": trading-platform/phases/phase-04-broker-market-data.md
+              - "Phase 5": trading-platform/phases/phase-05-instrument-option-chain.md
+              - "Phase 6": trading-platform/phases/phase-06-market-data-ta.md
+              - "Phase 7": trading-platform/phases/phase-07-strategy-signal.md
+              - "Phase 8": trading-platform/phases/phase-08-risk-position.md
+              - "Phase 9": trading-platform/phases/phase-09-order-execution.md
+              - "Phase 10": trading-platform/phases/phase-10-reconciliation.md
+              - "Phase 11": trading-platform/phases/phase-11-backtesting-paper.md

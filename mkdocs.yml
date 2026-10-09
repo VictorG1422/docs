@@ -50,6 +50,7 @@ nav:
   - Trading Platform:
       - Overview: trading-platform/index.md
       - Flow & Worked Examples: trading-platform/flow-and-examples.md
+      - How-To Guide: trading-platform/how-to.md
       - Architecture & Data Flow: trading-platform/architecture.md
       - Module Reference: trading-platform/module-reference.md
       - Setup & Configuration: trading-platform/setup.md

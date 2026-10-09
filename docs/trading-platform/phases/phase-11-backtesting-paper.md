@@ -171,4 +171,31 @@ a real `backtest_runs`/`backtest_trades` row against real PostgreSQL (fake
 historical data only) and cleans up after itself. All Phase 1-10 tests
 confirmed still passing (561 total after Phase 11).
 
+## Fixes discovered running this against real PostgreSQL for the first time
+
+The full test suite runs against in-memory SQLite, which is lenient about
+things real PostgreSQL enforces strictly. The first time this phase was
+actually run end-to-end against a real database, three issues surfaced
+that no amount of unit testing had caught:
+
+- **Pending migrations.** `alembic upgrade head` had never actually been
+  applied beyond migration `0005` in the real database -- always check
+  `alembic current` vs `alembic heads` before assuming the schema is up
+  to date.
+- **A migration bug** (`migrations/versions/0006_risk_trade_intents.py`):
+  the `trade_intent_direction` enum type was created twice in the same
+  migration (once explicitly, once implicitly via the column definition),
+  which PostgreSQL rejects outright (SQLite silently allows it). Fixed by
+  removing the redundant explicit creation.
+- **A stop-loss/target precision bug** (`risk/stop_loss.py`): ATR-derived
+  stop-loss/target values carry many decimal places, but the database
+  columns that store them only keep 2. PostgreSQL silently rounds on
+  insert; SQLite does not enforce this at all. The mismatch between the
+  in-memory and re-read values caused Phase 9 to reject every single
+  approved trade with `STOP_LOSS_MISMATCH`. Fixed by rounding stop-loss
+  and target to 2 decimal places at the moment they're calculated.
+
+See the [How-To Guide](../how-to.md) for the practical, step-by-step
+version of running a backtest or paper session without hitting these.
+
 See the original prompt: [specs/11-phase11.md](../specs/11-phase11.md).

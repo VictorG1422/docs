@@ -21,11 +21,17 @@ moment a price tick arrives to the moment a trade is opened, rejected, or
 double-checked against the broker. Read that page before anything else
 below -- it will make every other page easier to follow.
 
+**Want to actually run something?** Skip straight to the
+[**How-To Guide**](how-to.md) -- step-by-step instructions for running a
+backtest, running paper trading against live data, changing settings,
+and the most common troubleshooting questions.
+
 ## Documentation map
 
 | Page | What it covers |
 | --- | --- |
 | [Flow & Worked Examples](flow-and-examples.md) | The end-to-end pipeline, explained once with a diagram, then walked through with four concrete scenarios. |
+| [How-To Guide](how-to.md) | Practical, step-by-step instructions: running a backtest, running paper trading, changing settings, troubleshooting. |
 | [Architecture & Data Flow](architecture.md) | Design decisions, instrument/underlying support, and repository layout. |
 | [Module Reference](module-reference.md) | Every source file and what it's responsible for. |
 | [Setup & Configuration](setup.md) | Installation, every environment variable, and the AWS Secrets Manager integration. |

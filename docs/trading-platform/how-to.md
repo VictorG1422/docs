@@ -32,35 +32,36 @@ This tells you whether the database, the cache, and your broker
 connection are all working. Fix any failures here before doing anything
 else — nothing downstream will work reliably otherwise.
 
-**2. Load the list of tradable instruments.**
+**2. Load the instrument master.**
 
-The system needs to know what NIFTY, BANKNIFTY, or any other
-stock/option/future actually *is* (its exact price step, lot size,
-expiry, etc.) before it can trade or backtest it. This comes from your
-broker, not from this project, so it needs to be downloaded once (and
-refreshed occasionally, since options/futures expire and new ones get
-listed):
+The system needs broker metadata for contracts and NSE index references.
+Download the instrument master once and refresh it occasionally as new
+contracts are listed:
 
 ```powershell
-python scripts/download_instruments.py NFO
+python scripts/download_instruments.py
 ```
 
-`NFO` is the exchange segment for futures & options (NIFTY/BANKNIFTY
-options and futures live here). If you also want to trade/backtest a
-plain stock or an ETF, also run it for the cash market:
+With no arguments, the script syncs both `NFO` (futures/options) and
+`NSE` (cash-market instruments and index references). You can request one
+exchange or both explicitly:
 
 ```powershell
 python scripts/download_instruments.py NSE
+python scripts/download_instruments.py NFO
+python scripts/download_instruments.py NSE NFO
 ```
 
-This is safe to re-run any time — it only adds new instruments and
-updates existing ones, it never deletes your trade history.
+The sync upserts by instrument token, so it is safe to re-run and does not
+delete existing instrument or trade rows.
 
-> **Good to know:** the raw index itself (e.g. literally "NIFTY 50") is
-> *not* something you can buy, sell, or backtest directly — only its
-> futures, options, or an ETF that tracks it (e.g. `NIFTYBEES`) are
-> real, tradable instruments. If you want to analyze "the index", use
-> one of those as a stand-in. See the worked example below.
+> **Index references:** the NSE dump includes `NIFTY 50` and `NIFTY BANK`
+> (the BANKNIFTY index). They are stored for inspection, with Kite's
+> `INDICES` segment and zero lot/tick sizes; they are not tradable
+> contracts. Use NFO futures/options or a tradable ETF such as
+> `NIFTYBEES` for order sizing and backtests. In the dashboard, search for
+> `NIFTY BANK` rather than `BANKNIFTY`, which is the familiar name but not
+> Kite's index-master symbol.
 
 ## How to view the dashboard
 
@@ -93,19 +94,30 @@ To enable editing, set `DASHBOARD_ADMIN_TOKEN` in the dashboard process
 environment and restart it. Enter that token in the settings section
 before saving. Keep it secret: it authorizes changes to trading risk and
 scoring configuration. Editing remains disabled when the variable is
-empty. Apply the database migration first with `alembic upgrade head` so
-the score and settings tables exist.
+empty. Apply the database migrations first with `alembic upgrade head`;
+migration `0011` adds the score/settings tables and `0012` permits NSE
+index reference rows.
 
-- **Instruments** / **Candles** — what's been synced, and recent price
-  history for a specific instrument token.
+- **Instruments** — search partial trading symbols or underlying names,
+  filter by exchange and instrument type, and page through database
+  results. The count reflects all matches; page sizes are 50, 100, 250,
+  or 500. For the indices, select `NSE` and `Equity`, then search
+  `NIFTY 50` or `NIFTY BANK`.
+- **Candles** — recent price history for a specific instrument token.
 - **Signals**, **Orders**, **Positions** — the actual
   trading activity, most recent first.
 - **Risk Decisions** / **Trade Intents** — why a signal was approved or
   rejected, and what was sized.
 - **Reconciliation Runs** — click a run to see exactly which orders or
   positions disagreed with the broker.
-- **Backtest Runs** — click a run to see every simulated trade it
-  produced.
+- **Backtest Runs** — the run list shows the instrument, strategy, date
+  range, starting capital, net P/L, return, closed-trade count, and win
+  rate. Click a run for final equity, drawdown, transaction costs,
+  rejected signals, readable run settings, and any data-quality notes.
+  Its trades table shows entry/exit prices, costs, and net P/L without
+  exposing the raw JSON snapshot. The trade count includes only closed
+  round trips; an open position can still contribute to marked-to-market
+  P/L while the closed-trade count is zero.
 - **Paper Sessions** — the status/summary of every paper-trading session
   you've started.
 

@@ -97,7 +97,7 @@ Verify connectivity and apply the schema:
 
 ```powershell
 python scripts/health_check.py   # optional: confirms PostgreSQL is reachable
-alembic upgrade head             # creates instruments/signals/orders/positions/trades
+alembic upgrade head             # apply the complete database schema
 ```
 
 `Settings.postgres_dsn` builds the connection string from these
@@ -129,6 +129,10 @@ creates five tables -- `instruments`, `signals`, `orders`, `positions`,
 constraints, and native PostgreSQL enum types as the ORM models in
 `trading_system/storage/db/models.py`. Raw high-frequency ticks are
 intentionally **not** persisted to PostgreSQL.
+
+Migration `0012` updates the instrument lot-size check to allow zero only
+for `INDICES` reference rows; tradable instruments still require a positive
+lot size. Migration `0011` adds dashboard score, settings, and audit tables.
 
 ## Redis setup
 
@@ -252,14 +256,18 @@ Strategy generates signal -> acquire_lock(name, ttl) -> check state
 ## Utility scripts
 
 ```powershell
-python scripts/health_check.py          # verify Postgres/Redis/Kite connectivity, exits 1 on any failure
-python scripts/download_instruments.py [EXCHANGE]  # sync the Kite instrument dump into PostgreSQL (default: NFO)
+python scripts/health_check.py                 # verify Postgres/Redis/Kite connectivity
+python scripts/download_instruments.py          # sync both NFO and NSE
+python scripts/download_instruments.py NSE      # sync one exchange
+python scripts/download_instruments.py NSE NFO  # sync selected exchanges
 ```
 
 `health_check.py` is suitable for use as a container/orchestrator
 readiness probe. `download_instruments.py` upserts instruments into the
 `instruments` table via `InstrumentSyncService` -- safe to run
 repeatedly, existing rows are updated in place rather than duplicated.
+NSE sync includes `NIFTY 50` and `NIFTY BANK` index references; these have
+zero lot/tick sizes and are for dashboard inspection, not order placement.
 
 ## Logging
 

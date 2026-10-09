@@ -252,9 +252,10 @@ Browser
   converts any ORM row's mapped columns into a JSON-safe dict generically
   (via `sqlalchemy.inspect()` + FastAPI's own `jsonable_encoder`) instead
   of maintaining 15+ near-duplicate response schemas by hand. The
-  frontend mirrors this: `renderTable()` in `app.js` builds a table's
-  columns from whatever keys a response actually contains, so a new
-  field or endpoint never requires a frontend code change.
+  frontend uses `renderTable()` for general API tables; Backtest Runs
+  uses purpose-built rendering because its JSON result/config snapshots
+  need to be presented as readable metrics, setup details, warnings, and
+  simulated-trade rows rather than raw JSON columns.
 
 **What's exposed:** health (`/api/health`), instruments + candles,
 signals/orders/positions/trades (each enriched with its instrument's
@@ -267,6 +268,22 @@ The PUT endpoint requires `DASHBOARD_ADMIN_TOKEN`; setting overrides and
 audit records are stored in `dashboard_settings` and
 `dashboard_setting_audit`. Every list is most-recent-first and bounded by
 a `limit` (`api/queries.py::MAX_LIMIT`, 500).
+
+**Instrument search and pagination:** `GET /api/instruments` supports
+case-insensitive partial search over trading symbol or underlying name,
+plus exchange and instrument-type filters. The legacy exact `underlying`
+filter remains available. Results are stably ordered, paged in PostgreSQL
+with `limit`/`offset`, and include the full filtered count in
+`X-Total-Count`. The dashboard offers 50/100/250/500 rows per page with
+Previous/Next controls, so it does not need to load the entire instrument
+master into the browser. NSE index references are searchable as
+`NIFTY 50` and `NIFTY BANK` (`BANKNIFTY`); their zero lot/tick sizes mark
+them as reference rows, not valid order-sizing instruments.
+
+The default `python scripts/download_instruments.py` syncs both `NFO` and
+`NSE`; pass one or more exchange names to sync a subset. Migration `0012`
+allows zero lot size only on `INDICES` rows. Apply `alembic upgrade head`
+before syncing NSE index references into an existing database.
 
 **Run it:** `python scripts/run_dashboard.py`, then open
 `http://127.0.0.1:8000/`. See the
@@ -281,9 +298,11 @@ engine/session fixture with `StaticPool` + `check_same_thread=False`
 instead. API tests cover health, trading records, normalized score
 snapshots, KPI calculations, token-protected settings writes, validation,
 audit rows, and runtime override precedence, along with the existing
-backtest/reconciliation/dashboard routes. The current migration has not
-been applied to a real database as part of this addendum; apply
-`alembic upgrade head` before using the new score/settings tables. The
-full unit suite currently passes with 577 tests.
+backtest/reconciliation/dashboard routes. Apply `alembic upgrade head`
+before deployment so all migrations, including dashboard revision `0011`
+and index-reference revision `0012`, are current. At the time this
+addendum was first written, the full unit suite passed with 577 tests;
+later instrument filtering and index-sync changes have their own focused
+API, model, and sync tests.
 
 See the original prompt: [specs/11-phase11.md](../specs/11-phase11.md).

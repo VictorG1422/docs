@@ -67,5 +67,10 @@ call the new repositories yet.
 - **No auto-DDL at startup**: nothing in `Application`/`PostgresClient`
   ever calls `Base.metadata.create_all()`/`drop_all()`; schema is owned
   exclusively by Alembic migrations.
+- **Later index-reference exception (migration `0012`)**: Kite's NSE
+  `INDICES` rows use zero lot and tick sizes because they are reference
+  data, not tradable contracts. The instrument constraint permits zero lot
+  size only for the `INDICES` segment; sync validation preserves Kite's
+  zero lot/tick values there and still requires positive values elsewhere.
 
 See the original prompt: [specs/02-phase2.md](../specs/02-phase2.md).

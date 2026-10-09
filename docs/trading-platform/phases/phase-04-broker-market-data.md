@@ -47,8 +47,9 @@ decision for a later phase.
   -- `Kite -> validation -> InstrumentRepository -> PostgreSQL`. Matches
   existing rows by `instrument_token` (update in place) instead of
   duplicating them, so it is safe to run repeatedly; malformed records
-  (bad token/symbol/lot size/tick size) are skipped and counted, not
-  inserted. Uses the existing Phase 2 `PostgresClient.session()`/
+  are skipped and counted, not inserted. NSE `INDICES` reference rows
+  preserve Kite's zero lot/tick sizes; other instruments require positive
+  values. Uses the existing Phase 2 `PostgresClient.session()`/
   `InstrumentRepository` -- no second database layer.
 - `trading_system/market_data/subscription_manager.py::SubscriptionManager`
   -- tracks the active instrument-token subscription set and makes
@@ -75,9 +76,17 @@ decision for a later phase.
   `KITE_SUBSCRIPTION_UPDATED`, `KITE_INSTRUMENT_SYNC_STARTED`/
   `_COMPLETED`/`_FAILED`. No per-tick data is logged at `INFO` level.
 - `scripts/download_instruments.py` now persists the downloaded
-  instrument dump into PostgreSQL via `InstrumentSyncService` (accepts
-  an optional exchange argument, default `NFO`) instead of only
-  reporting a count.
+  instrument dump into PostgreSQL via `InstrumentSyncService`. It syncs
+  both `NFO` and `NSE` by default; one or more exchange names can be
+  supplied to select exchanges explicitly. It also places the repository
+  root and `src/` on the import path so direct script execution resolves
+  project modules.
+
+**Later instrument-master update (migration `0012`):** NSE sync stores
+the non-tradable `NIFTY 50` and `NIFTY BANK` (`BANKNIFTY`) index reference
+rows. Their zero lot/tick sizes are retained; use their NFO contracts or
+a tradable ETF for order sizing and backtests. Run `alembic upgrade head`
+before syncing these rows into an existing database.
 
 **Design decisions / Phase 5+ TODOs:**
 

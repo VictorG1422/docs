@@ -78,6 +78,11 @@ the displayed name), so search and select the synchronized EQ row after
 instrument sync. Existing databases with symbol-based watchlists must run
 `python scripts/migrate_watchlists_to_tokens.py` and review the dry-run
 before `--apply` and before starting the token-based application version.
+For example, NIFTY 50 is the NSE `INDICES` instrument with token `256265`;
+the stored JSON value is the numeric array `[256265]`, not `["NIFTY 50"]`
+or `["256265"]`. Keep `EQUITY_WATCHLIST` as `[]` unless adding tradable
+cash equities. Prefer the migration command over a direct SQL update so
+the conversion is validated and recorded in the settings audit table.
 
 ## How to view the dashboard
 
@@ -108,7 +113,9 @@ trades. Use the shared sidebar to open independent, bookmarkable pages:
   instrument records and add/remove token-based options/equity watchlist
   entries. Options watchlists analyze the underlying EQ/index and trade
   the selected CE/PE; equity watchlists analyze and trade the same cash EQ.
-- **Backtests** (`/backtests`) — inspect run metrics and each completed
+- **Backtests** (`/backtests`) — the newest run is selected automatically;
+  choose a different run in the list below its audit to inspect that run.
+  Inspect run metrics and each completed
   trade. Run details include equity, gross/net P&L, win/loss counts,
   drawdown, holding time, Sharpe/Sortino, streaks, costs, exposure, and
   rejected signals. The audit table expands score components into separate

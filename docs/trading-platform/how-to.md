@@ -113,6 +113,10 @@ trades. Use the shared sidebar to open independent, bookmarkable pages:
   instrument records and add/remove token-based options/equity watchlist
   entries. Options watchlists analyze the underlying EQ/index and trade
   the selected CE/PE; equity watchlists analyze and trade the same cash EQ.
+  For each watchlist, search for an instrument, select it from the results,
+  and use its Add button. Remove entries from the selected-watchlist list at
+  the bottom of the page. These are pending edits until you enter the
+  dashboard admin token and select **Save watchlists**.
 - **Backtests** (`/backtests`) — the newest run is selected automatically;
   choose a different run in the list below its audit to inspect that run.
   Inspect run metrics and each completed

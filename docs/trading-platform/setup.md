@@ -74,8 +74,8 @@ no AWS override for database-managed strategy or scoring values.
 | `S3_BUCKET_NAME` | *(empty)* | Bucket used for snapshots/archival storage. |
 | `AWS_SECRETS_NAME` | `victor/zerodha/kite` | AWS Secrets Manager secret containing only the allow-listed credentials and infrastructure settings. Read from `.env`/environment so the secret can be located. |
 | `DASHBOARD_ADMIN_TOKEN` | *(empty)* | AWS secret key for authorizing dashboard configuration writes; an empty value disables editing. |
-| `OPTIONS_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: underlying symbols whose candles generate signals and whose corresponding CE/PE contracts are paper/live traded. |
-| `EQUITY_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: stock symbols whose candles generate signals and whose same cash equities are traded. |
+| `OPTIONS_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: synchronized underlying EQ instrument-token IDs. The selected index/stock EQ candles generate signals; the corresponding CE/PE contract is traded. |
+| `EQUITY_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: synchronized tradable cash-EQ instrument-token IDs. Each selected instrument generates signals and is itself traded. |
 | `SCORING_WEIGHT_<PATTERN_NAME>` | *(unset)* | PostgreSQL dashboard setting per pattern/indicator; overrides that entry in `scoring._DEFAULT_WEIGHTS`. |
 | `SCORING_BUY_THRESHOLD` / `SCORING_SELL_THRESHOLD` | *(unset)* | PostgreSQL dashboard settings for `ScoringConfig` buy/sell thresholds (defaults `50`). |
 | `TRADING_MODE` | `paper` | PostgreSQL dashboard setting: `paper` (simulated) or `live` (live market-data mode; does not itself authorize orders). |
@@ -160,9 +160,31 @@ signal source: scoring analyzes its candles and price, then bullish
 signals select the corresponding CE and bearish signals the PE. The
 selected option's own price is used for risk and execution. For
 `EQUITY_WATCHLIST`, the same tradable cash-equity instrument is used for
-analysis and execution. Indices are signal-only and cannot be in the
-equity execution path. Equivalent aliases such as `NIFTY 50` and
-`NIFTY` resolve to the same underlying for watchlist classification.
+analysis and execution. The dashboard lets you search synchronized EQ
+instruments and displays the selected name, symbol, exchange, segment,
+and token; only the exact instrument token is stored in the watchlist.
+This removes symbol-alias ambiguity, but the token must still exist in
+the current synchronized instrument master. Indices are signal-only and
+cannot be in the equity execution path. OPTIONS entries also require
+synchronized future CE and PE contracts that meet the configured minimum
+days-to-expiry rule.
+
+Before deploying token-based watchlists to a database with existing
+symbol values, synchronize NSE and NFO instruments using the currently
+running application version, then run the migration script first in
+dry-run mode and review every mapping:
+
+```powershell
+python scripts/migrate_watchlists_to_tokens.py
+python scripts/migrate_watchlists_to_tokens.py --apply
+```
+
+The migration converts only unique matches and refuses to apply any
+changes if a value is missing, ambiguous, unsuitable for its watchlist,
+or assigned to both modes. Apply the migration successfully before
+starting the token-based application version. Fresh databases also need
+their initial symbol-based default converted by this step after instrument
+synchronization.
 
 Unit tests monkeypatch the AWS fetch function and do not access AWS.
 

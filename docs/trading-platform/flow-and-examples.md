@@ -9,32 +9,46 @@
 
 ## 1. The big picture
 
-At the highest level, the application does five things, in this order,
-every time it runs:
+At the highest level, each trading process follows this sequence:
 
-1. **Load configuration** -- read bootstrap/local settings from `.env`
-   and credentials/infrastructure from the explicit AWS Secrets Manager
-   allow-list; database-backed dashboard settings are applied after
-   PostgreSQL connects. Fail immediately if required configuration is
-   missing or invalid.
-2. **Connect** -- open a connection to PostgreSQL, Redis, and (if
-   credentials are present) the Kite broker API and its WebSocket feed.
-3. **Watch the market** -- receive live price ticks, turn them into
-   candles (1-minute, 5-minute, etc.), and keep the latest price of every
-   instrument available in memory and in Redis.
-4. **Decide, check, and (optionally) trade** -- on every completed
-   candle, ask the configured strategy "is there a trade here?", pass any
-   answer through the risk engine, and -- only if explicitly enabled --
-   send an order to the broker.
-5. **Shut down cleanly** -- on `Ctrl+C` or a termination signal, stop
-   watching the market, release any locks, and close every connection.
+1. **Load configuration** -- read bootstrap/local settings and only the
+   agreed credential/infrastructure allow-list from AWS Secrets Manager.
+   Watchlists, risk, and scoring settings remain database-managed.
+2. **Refresh instrument data** -- fetch NSE and NFO from Kite and upsert
+   both into PostgreSQL by instrument token. Main, paper, and backtest
+   processes stop before trading/backtest work if either exchange fails
+   to sync. Dashboard-only startup does not perform this refresh.
+3. **Load trading settings and select instruments** -- use token IDs from
+   database watchlists and resolve their names/metadata from the refreshed
+   instrument master.
+4. **Watch and analyze the market** -- receive ticks for the signal
+   instrument and build candles for the configured strategy/timeframes.
+5. **Check risk and trade** -- approved signals proceed to order handling:
+   paper mode simulates fills; real broker submission remains separately
+   gated by live execution settings.
+6. **Shut down cleanly** -- on `Ctrl+C` or a termination signal, stop
+   subscriptions, persist session state, and close resources.
 
-Steps 1, 2, 3, and 5 run today exactly as described, out of the box, in
-`TRADING_MODE=paper` (the default). Step 4 exists as a fully tested,
-ready-to-use framework, but nothing currently tells the application
-*which* strategy to run against *which* instrument -- that decision, and
-the one line of code that wires it in, is deliberately left to you (see
-[Safety Mechanisms & Roadmap](safety-and-limitations.md#what-remains-to-be-implemented)).
+`TRADING_MODE=paper` is the default, but a paper session still requires
+explicit strategy and instrument selection through the paper-session
+command. Live order execution is a separate opt-in gate; starting the
+application does not by itself authorize real orders.
+
+### Signal source and traded instrument
+
+Watchlists identify the **signal source**, using synchronized underlying
+EQ/index instrument tokens:
+
+- **Options watchlist:** strategy evaluates the selected underlying EQ or
+  index candles; a BUY/SELL decision selects and trades the corresponding
+  CE/PE contract. The contract's own market price, lot size, stop, and
+  target are used for option risk and order calculations.
+- **Equity watchlist:** strategy evaluates the selected tradable cash EQ
+  and orders that same EQ. Risk levels derive from that equity's price.
+
+The dashboard displays instrument labels for people, but PostgreSQL stores
+the underlying token IDs. AWS Secrets Manager does not override these
+database-managed watchlists or score settings.
 
 ## 2. The trading pipeline, stage by stage
 
@@ -81,9 +95,9 @@ remembering before reading the worked examples:
 - **"No" is always a valid answer**, at every stage. Most candles produce
   no signal; most signals that *are* produced are expected to pass risk
   checks, but a rejection is a normal, logged outcome, not an error.
-- **Paper mode is the default everywhere.** Every one of the stages above
-  runs identically in paper and live mode -- the only thing that changes
-  at stage 9 is whether a real order reaches Kite.
+- **Paper mode is the default.** A paper session still requires explicit
+  strategy/instrument selection; live order submission additionally
+  requires its separate execution gate.
 
 ## 3. Worked example: a trade that goes through
 
@@ -91,11 +105,12 @@ Everything below uses made-up, round numbers to keep the arithmetic easy
 to follow -- it's an illustration of the *logic*, not a transcript of a
 real run.
 
-**Setup:** `OPTIONS_WATCHLIST=NIFTY`, a 5-minute strategy, ATM call/put
+**Setup:** select the synchronized NIFTY 50 EQ instrument in the options
+watchlist (token `256265` in the sample instrument master), a 5-minute strategy, ATM call/put
 buying only, `RISK_MAX_RISK_PER_TRADE=4000` (rupees), ATR-based stop-loss
 with a 1.5x multiplier, 1.5x reward:risk target, NIFTY lot size 75.
 
-1. **A candle closes.** At 10:05 AM, the 5-minute NIFTY futures candle
+1. **A candle closes.** At 10:05 AM, the 5-minute NIFTY index candle
    completes: open 22,110, high 22,160, low 22,100, close 22,150.
 2. **The strategy fires.** Suppose the configured strategy spots a
    bullish engulfing candle plus RSI crossing up through 55 -- enough

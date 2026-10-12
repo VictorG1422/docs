@@ -55,6 +55,15 @@ python scripts/download_instruments.py NSE NFO
 The sync upserts by instrument token, so it is safe to re-run and does not
 delete existing instrument or trade rows.
 
+The main trading application, paper-trading start command, and backtest
+command also refresh **both NSE and NFO at every process start** before
+trading or historical-data work proceeds. A Kite download or database
+sync failure aborts that process; inspect the exchange-specific error and
+restore connectivity before retrying. The dashboard server is read-only
+with respect to instrument sync and does not trigger this startup refresh.
+The manual command remains useful for seeding the instrument table before
+a token-watchlist migration or dashboard configuration.
+
 > **Index references:** the NSE dump includes `NIFTY 50` and `NIFTY BANK`
 > (the BANKNIFTY index). They are stored for inspection, with Kite's
 > `INDICES` segment and zero lot/tick sizes; they are not directly tradable.
@@ -63,6 +72,12 @@ delete existing instrument or trade rows.
 > must be tradable cash equities; an index cannot be directly ordered. In the dashboard, search for
 > `NIFTY BANK` rather than `BANKNIFTY`, which is the familiar name but not
 > Kite's index-master symbol.
+
+The watchlist picker stores the selected underlying instrument token (not
+the displayed name), so search and select the synchronized EQ row after
+instrument sync. Existing databases with symbol-based watchlists must run
+`python scripts/migrate_watchlists_to_tokens.py` and review the dry-run
+before `--apply` and before starting the token-based application version.
 
 ## How to view the dashboard
 
@@ -77,19 +92,36 @@ python scripts/run_dashboard.py
 Open `http://127.0.0.1:8000/` in any browser. The dashboard reads its
 trading records from PostgreSQL and has a protected editor for the
 allow-listed risk and scoring settings. It cannot place orders or approve
-trades. Use the sidebar to switch between:
+trades. Use the shared sidebar to open independent, bookmarkable pages:
 
-- **Overview** — filled trades, open positions, realized and unrealized
+- **Dashboard** (`/`) — filled trades, open positions, realized and unrealized
   P/L, win ratio, failed/pending orders, and activity counts. Available
   account cash is fetched live from Kite and shown as unavailable if the
   broker balance cannot be retrieved.
-- **Scores** — normalized score snapshots stored separately from signals
+- **Metrics** (`/metrics`) — the complete set of account, activity, and
+  P/L metrics.
+- **Score history** (`/scores`) — normalized score snapshots stored separately from signals
   and trades, including instrument symbols and scoring matches.
-- **Trades** — closed trade details from the existing `trades` table.
-- **Risk & Scoring Settings** — editable options/equity watchlists, risk
-  limits, trading hours, stop-loss parameters, scoring thresholds, and
-  pattern/indicator weights. Changes are saved to PostgreSQL and take
-  effect in trading processes after restart.
+- **Score settings** (`/score-settings`) — scoring thresholds and
+  individual pattern/indicator weights.
+- **Instruments & watchlists** (`/instruments`) — search synchronized
+  instrument records and add/remove token-based options/equity watchlist
+  entries. Options watchlists analyze the underlying EQ/index and trade
+  the selected CE/PE; equity watchlists analyze and trade the same cash EQ.
+- **Backtests** (`/backtests`) — inspect run metrics and each completed
+  trade. Run details include equity, gross/net P&L, win/loss counts,
+  drawdown, holding time, Sharpe/Sortino, streaks, costs, exposure, and
+  rejected signals. The audit table expands score components into separate
+  timeframe, direction, contribution, strength, weight, multiplier, and
+  detail columns; every risk check has its own status and reason columns.
+- **Trading & risk settings** (`/risk-settings`) — trading mode, risk
+  limits, trading hours, and stop-loss/target parameters.
+- **Operational pages** — Signals, Orders, Positions, Trades, Risk
+  Decisions, Trade Intents, Reconciliation, Candles, and Paper Sessions
+  each have their own page and refresh action.
+
+Every displayed date/time is explicitly formatted in **IST
+(`Asia/Kolkata`)**, regardless of the browser or computer timezone.
 
 To enable editing, configure `DASHBOARD_ADMIN_TOKEN` in AWS Secrets
 Manager and restart the dashboard process. Enter that token in the
@@ -98,32 +130,6 @@ trading risk and scoring configuration. Editing remains disabled when
 the token is empty. Apply the database migrations first with `alembic upgrade head`;
 migration `0011` adds the score/settings tables and `0012` permits NSE
 index reference rows.
-
-- **Instruments** — search partial trading symbols or underlying names,
-  filter by exchange and instrument type, and page through database
-  results. The count reflects all matches; page sizes are 50, 100, 250,
-  or 500. For the indices, select `NSE` and `Equity`, then search
-  `NIFTY 50` or `NIFTY BANK`.
-- **Candles** — recent price history for a specific instrument token.
-- **Signals**, **Orders**, **Positions** — the actual
-  trading activity, most recent first.
-- **Risk Decisions** / **Trade Intents** — why a signal was approved or
-  rejected, and what was sized.
-- **Reconciliation Runs** — click a run to see exactly which orders or
-  positions disagreed with the broker.
-- **Backtest Runs** — the run list shows the instrument, strategy, date
-  range, starting capital, net P/L, return, closed-trade count, and win
-  rate. Click a run to see starting/final equity; gross/net P/L and
-  return; winning/losing counts, averages, win rate, and profit factor;
-  drawdown amount/percentage; average holding time; Sharpe/Sortino;
-  longest win/loss streaks; costs, exposure, rejected signals, and run
-  duration. The setup and data-quality notes are readable fields, not a
-  raw JSON snapshot. Return bars compare runs in the current list. The
-  trades table shows completed round trips with entry/exit prices, gross
-  and net P/L, and costs. An open position can contribute to marked-to-
-  market P/L while the closed-trade count is zero.
-- **Paper Sessions** — the status/summary of every paper-trading session
-  you've started.
 
 The three colored dots next to the logo show whether PostgreSQL, Redis,
 and your Kite connection are currently healthy (the same check as
@@ -294,8 +300,8 @@ stored in PostgreSQL.
 | Stop trading for the day after a loss | `RISK_MAX_DAILY_LOSS` | `5000` (rupees) |
 | Only trade during certain hours | `RISK_TRADING_WINDOW_START` / `RISK_TRADING_WINDOW_END` | `09:20` / `15:00` |
 | Avoid the volatile first/last few minutes of the session | `RISK_AVOID_FIRST_MINUTES_OF_SESSION` / `RISK_AVOID_LAST_MINUTES_OF_SESSION` | `15` |
-| Choose which indices/stocks to trade as options | `OPTIONS_WATCHLIST` | `NIFTY,BANKNIFTY` |
-| Choose which stocks to trade directly (no options) | `EQUITY_WATCHLIST` | `RELIANCE,TCS` |
+| Choose which indices/stocks to trade as options | `OPTIONS_WATCHLIST` | Select underlying EQ instruments in the dashboard; persisted as token IDs |
+| Choose which stocks to trade directly (no options) | `EQUITY_WATCHLIST` | Select tradable cash EQ instruments in the dashboard; persisted as token IDs |
 | Switch between simulated and real orders | `TRADING_MODE` | `paper` or `live` |
 | See more detail in the logs | `LOG_LEVEL` | `DEBUG` |
 

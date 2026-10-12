@@ -1,11 +1,11 @@
 # Phase 9 — Order Execution
 
 Phase 9 accepts an already persisted `RISK_APPROVED` Phase 8 `TradeIntent`.
-It never creates signals, changes strategy/risk decisions, changes the
-approved quantity, or automatically runs on a signal. `TradingEngine`
-exposes an explicit `execute_trade_intent(intent)` handoff after
-initialization; the main `Application`/strategy pipeline does not yet
-automatically create and execute intents.
+It never creates signals, changes strategy/risk decisions, or changes the
+approved quantity. `LiveTradingRuntime` is the application-level caller
+that evaluates the configured watchlists and hands approved intents to the
+Phase 9 `OrderExecutionEngine`; execution still requires all live safety
+gates. The backtest and paper paths use simulated adapters instead.
 
 ```text
 Phase 8 TradeIntent (must be persisted and risk-approved)
@@ -22,6 +22,11 @@ Phase 8 TradeIntent (must be persisted and risk-approved)
 Live broker submission additionally requires `APP_ENV=production` and
 `TRADING_MODE=live`; Kite credentials or live mode alone never enable
 orders. Paper/test execution requires a non-production environment and
+
+With `TRADING_MODE=live` and `ORDER_EXECUTION_ENABLED=false`, the
+application starts watchlist signal monitoring without submitting entry
+or protective-exit orders. `LiveTradingRuntime` reconciles broker state at
+startup and periodically; unresolved startup mismatches block new entries. Paper/test execution requires a non-production environment and
 the fake adapter; automated tests never use production credentials or
 real broker order APIs. The legacy signal-based `OrderManager` continues
 to use its paper handler; `LiveExecutionHandler` now fails closed and
@@ -34,8 +39,10 @@ to the approved quantity and aligned to the stored lot size, supported
 order/product/validity values, and valid Decimal prices aligned to the
 instrument tick size. It rejects mismatches rather than adjusting them.
 SL/SL-M entry orders require an explicit entry trigger. Phase 8 stop-loss
-and target values are preserved in the durable order metadata; Phase 9
-does not create separate protective orders.
+and target values are preserved in the durable order metadata. The live
+runtime monitors broker-confirmed open positions against those values and
+submits a durable protective-exit intent through the same Phase 9 engine;
+it does not create a separate standing stop order at entry.
 
 **Duplicate/failure handling:** Redis uses the existing namespaced
 `DistributedLock` and `DeduplicationStore`; PostgreSQL's unique
@@ -62,8 +69,11 @@ confirmed full fill promotes it to OPEN. This is not broker reconciliation.
 **Configuration:** `ORDER_EXECUTION_ENABLED=false` by default;
 `EXECUTION_ORDER_TYPE=MARKET`, `EXECUTION_PRODUCT=MIS`,
 `EXECUTION_VALIDITY=DAY`, optional `EXECUTION_MAX_QUANTITY`, and
-`EXECUTION_LOCK_TTL_SECONDS=30`. These variables are also read from the
-existing single Secrets Manager secret. Set live permission only after
+`EXECUTION_LOCK_TTL_SECONDS=30`. Execution settings are configured through
+the application environment or `.env` file and are not dashboard-editable.
+PostgreSQL dashboard configuration manages watchlists, risk, and scoring;
+AWS Secrets Manager supplies only the documented credential and
+infrastructure allow-list. Set live permission only after
 reviewing Phase 12 readiness; it requires all of `APP_ENV=production`,
 `TRADING_MODE=live`, `ORDER_EXECUTION_ENABLED=true`, and valid Kite auth.
 

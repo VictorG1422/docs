@@ -118,19 +118,14 @@ open items:
   position, and never places a corrective order (an unresolved mismatch
   is always left `REQUIRES_MANUAL_ACTION`). Automatically acting on an
   unresolved reconciliation mismatch remains explicitly out of scope.
-- **Phase 11 backtesting/paper-trading boundary** (see
-  [Phase 11](phases/phase-11-backtesting-paper.md) for the full write-up):
-  there is still no exit/position-closing pipeline anywhere in Phases
-  7-9 (`RiskEngine` rejects any `EXIT` signal as "not risk-manageable")
-  -- a backtested/paper position can only ever be opened, never closed by
-  the strategy itself. No stop-loss/target *monitoring* against ongoing
-  price movement exists either (Phase 8 only calculates and records a
-  stop-loss/target value on the `TradeIntent`; nothing watches
-  live/historical price action against it and emits an exit). Adding a
-  real exit pipeline is squarely a Phase 12 concern -- Phase 11
-  deliberately does not invent one. `RiskEngine._check_trading_window()`'s
+- **Protective-exit data dependency** (see
+  [Phase 11](phases/phase-11-backtesting-paper.md)): backtests and paper
+  sessions evaluate stop-loss/target against the traded instrument's own
+  candles. Live protective exits depend on ticks reaching the application;
+  if the Kite WebSocket disconnects or ticks become stale, the local
+  tick-triggered exit monitor cannot react until the feed recovers. Orders
+  are still gated by `ORDER_EXECUTION_ENABLED`, live mode, and production
+  environment checks. `RiskEngine._check_trading_window()`'s
   real-wall-clock IST check and Redis-TTL-based cooldown
-  (`RiskPolicy.cooldown_seconds`) are not clock-injected for backtesting
-  -- leave them unset for an accurate backtest. No background
-  daemon/process manager exists for paper sessions yet
-  (`scripts/paper_trade.py` runs in the foreground only).
+  (`RiskPolicy.cooldown_seconds`) are not clock-injected for backtesting.
+  Paper sessions run in the foreground via `scripts/paper_trade.py`.

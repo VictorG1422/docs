@@ -42,14 +42,14 @@ are loaded by `config/settings.py::Settings` (`pydantic-settings`), which
 reads the `.env` file automatically and is cached process-wide via
 `get_settings()`.
 
-**Every value below is sourced from a single AWS Secrets Manager secret**
-(`AWS_SECRETS_NAME`, default `victor/zerodha/kite`), maintained as flat
-key-value pairs (never a nested JSON blob) -- see [AWS Secrets Manager](#aws-secrets-manager)
-below for exactly how it works and which key maps to which variable.
-Kite credentials are the one field group that's *always* overridden
-(even when absent from the secret, default `""`); every other field
-below falls back to `.env`/its built-in default when its key is absent
-from the secret -- useful for local development with no AWS access at all.
+AWS Secrets Manager supplies only the credentials and infrastructure keys
+listed in [AWS Secrets Manager](#aws-secrets-manager). Watchlists, trading
+mode, risk limits, and scoring settings are managed in PostgreSQL and loaded
+from the dashboard settings table at process startup. Order-execution
+permission and execution parameters are configured through `.env` or the
+environment and are intentionally not dashboard-editable. Other
+local/runtime settings use `.env` or their documented defaults. There is
+no AWS override for database-managed strategy or scoring values.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -72,19 +72,19 @@ from the secret -- useful for local development with no AWS access at all.
 | `AWS_REGION` | `ap-south-1` | AWS region for S3 **and** the secret in Secrets Manager. Read from `.env`/environment only -- never secret-sourced (needed just to find the secret). |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | *(none)* | AWS credentials (omit to fall back to the default boto3 credential chain, e.g. an IAM role). Read from `.env`/environment only -- **never** secret-sourced (circular). |
 | `S3_BUCKET_NAME` | *(empty)* | Bucket used for snapshots/archival storage. |
-| `AWS_SECRETS_NAME` | `victor/zerodha/kite` | Name of the single AWS Secrets Manager secret holding every other value in this table. Read from `.env`/environment only. |
-| `DASHBOARD_ADMIN_TOKEN` | *(empty)* | Environment-only token required to save dashboard risk/scoring settings. Not sourced from AWS Secrets Manager; an empty value disables editing. |
-| `OPTIONS_WATCHLIST` | *(empty)* | Comma-separated underlying symbols (index/stock) that trade via options (CE/PE), e.g. `NIFTY,BANKNIFTY`. Runs simultaneously alongside `EQUITY_WATCHLIST` -- see [`resolve_instrument_mode`](#aws-secrets-manager). |
-| `EQUITY_WATCHLIST` | *(empty)* | Comma-separated underlying (stock) symbols that trade as direct cash equity instead of an option, e.g. `RELIANCE,TCS`. A symbol can only be in one of the two watchlists (validated at startup). |
-| `SCORING_WEIGHT_<PATTERN_NAME>` | *(unset)* | One flat key per pattern/indicator (e.g. `SCORING_WEIGHT_HEAD_AND_SHOULDERS=40`) overrides that entry in `scoring._DEFAULT_WEIGHTS` -- see [`ScoringConfig.from_settings`](#aws-secrets-manager). |
-| `SCORING_BUY_THRESHOLD` / `SCORING_SELL_THRESHOLD` | *(unset)* | Overrides `ScoringConfig.buy_score_threshold`/`sell_score_threshold` (both default `50`) when set. |
-| `TRADING_MODE` | `paper` | `paper` (safe, simulated) or `live` (real broker authentication/mode; does not itself authorize orders). |
-| `ORDER_EXECUTION_ENABLED` | `false` | Explicit Phase 9 order-execution permission. Live submission additionally requires `APP_ENV=production` and `TRADING_MODE=live`. |
-| `EXECUTION_ORDER_TYPE` | `MARKET` | Phase 9 `MARKET`, `LIMIT`, `SL`, or `SL-M`. Stop order types require an explicit entry trigger in the intent metadata; no protective stop orders are generated. |
-| `EXECUTION_PRODUCT` | `MIS` | Broker-supported `MIS`, `NRML`, or `CNC` product. |
-| `EXECUTION_VALIDITY` | `DAY` | Broker-supported `DAY` or `IOC` order validity. |
-| `EXECUTION_MAX_QUANTITY` | *(unset)* | Optional hard upper quantity cap, in units. Approved quantity is never resized. |
-| `EXECUTION_LOCK_TTL_SECONDS` | `30` | TTL for the per-intent distributed execution lock. |
+| `AWS_SECRETS_NAME` | `victor/zerodha/kite` | AWS Secrets Manager secret containing only the allow-listed credentials and infrastructure settings. Read from `.env`/environment so the secret can be located. |
+| `DASHBOARD_ADMIN_TOKEN` | *(empty)* | AWS secret key for authorizing dashboard configuration writes; an empty value disables editing. |
+| `OPTIONS_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: underlying symbols whose candles generate signals and whose corresponding CE/PE contracts are paper/live traded. |
+| `EQUITY_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: stock symbols whose candles generate signals and whose same cash equities are traded. |
+| `SCORING_WEIGHT_<PATTERN_NAME>` | *(unset)* | PostgreSQL dashboard setting per pattern/indicator; overrides that entry in `scoring._DEFAULT_WEIGHTS`. |
+| `SCORING_BUY_THRESHOLD` / `SCORING_SELL_THRESHOLD` | *(unset)* | PostgreSQL dashboard settings for `ScoringConfig` buy/sell thresholds (defaults `50`). |
+| `TRADING_MODE` | `paper` | PostgreSQL dashboard setting: `paper` (simulated) or `live` (live market-data mode; does not itself authorize orders). |
+| `ORDER_EXECUTION_ENABLED` | `false` | Environment/`.env` only; not dashboard-editable. Live submission additionally requires `APP_ENV=production` and `TRADING_MODE=live`. |
+| `EXECUTION_ORDER_TYPE` | `MARKET` | Environment/`.env` only; Phase 9 `MARKET`, `LIMIT`, `SL`, or `SL-M`. Stop order types require an explicit entry trigger in the intent metadata; no protective stop orders are generated. |
+| `EXECUTION_PRODUCT` | `MIS` | Environment/`.env` only; broker-supported `MIS`, `NRML`, or `CNC` product. |
+| `EXECUTION_VALIDITY` | `DAY` | Environment/`.env` only; broker-supported `DAY` or `IOC` order validity. |
+| `EXECUTION_MAX_QUANTITY` | *(unset)* | Environment/`.env` only; optional hard upper quantity cap, in units. Approved quantity is never resized. |
+| `EXECUTION_LOCK_TTL_SECONDS` | `30` | Environment/`.env` only; TTL for the per-intent distributed execution lock. |
 | `RECONCILIATION_LOOKBACK_HOURS` | `48` | Phase 10: how far back local orders are pulled for broker tag/id matching. |
 | `RECONCILIATION_LOCK_TTL_SECONDS` | `120` | Phase 10: TTL for the global `reconciliation:global` distributed lock. |
 | `RECONCILIATION_INTERVAL_SECONDS` | *(unset)* | Phase 10: enables `start_periodic_reconciliation()` when set to a positive integer; unset disables periodic reconciliation entirely. |
@@ -115,64 +115,25 @@ from the secret -- useful for local development with no AWS access at all.
 
 ## AWS Secrets Manager
 
-**One secret holds every configuration value in the table above**:
-`AWS_SECRETS_NAME` (default `victor/zerodha/kite`), maintained as flat
-key-value pairs in the Secrets Manager console -- no nested JSON. This
-means rotating a database password, tightening a risk limit, or
-switching `TRADING_MODE` is a Secrets Manager update + a process
-restart -- **no code change, no new image build, no `.env` edit
-required.**
-
-Why one secret, not `.env`: the Kite access token expires daily and is
-refreshed out-of-band (e.g. a separate scheduled login/automation job
-that writes the new token back to this same secret), so the trading
-system should always read whatever is currently in AWS rather than a
-possibly-stale local `.env` value -- and once that pattern exists for
-Kite, every other operational value benefits from the same "no
-redeploy" property.
-
-How it works (`config/settings.py::get_settings`):
-
-1. A bootstrap `Settings()` instance is constructed first (to read
-   `aws_region`/`aws_secrets_name` from `.env`/defaults -- these two,
-   plus the raw `aws_access_key_id`/`aws_secret_access_key`, are the
-   *only* fields that can never be secret-sourced, since they're needed
-   to find/authenticate to the secret itself).
-2. `_fetch_config_secret_from_aws(secret_name, region)` calls
-   `boto3.client("secretsmanager", region_name=region).get_secret_value(...)`
-   using the **default AWS credential provider chain** (environment
-   variables, shared config/credentials file, or an attached IAM role --
-   never explicit keys passed in code).
-3. `get_settings()` maps secret keys onto `Settings` fields: for most
-   fields, the key is simply the field's attribute name upper-cased
-   (matching `pydantic-settings`' own `.env` convention), e.g.
-   `postgres_host` -> `POSTGRES_HOST`, `risk_max_risk_per_trade` ->
-   `RISK_MAX_RISK_PER_TRADE`. Two exceptions: Kite credentials use the
-   shorter `API_KEY`/`API_SECRET`/`ACCESS_TOKEN` keys and **always**
-   override (even when absent, default `""` -- AWS is their sole source
-   of truth); per-pattern scoring weights use one
-   `SCORING_WEIGHT_<PATTERN_NAME>` key each (e.g.
-   `SCORING_WEIGHT_HEAD_AND_SHOULDERS=40`) since there's no single dict
-   value to store.
-4. Any other key **absent** from the secret falls back to `.env`/the
-   field's built-in default -- a secret containing only
-   `POSTGRES_PASSWORD` still works, and local development never needs
-   an AWS secret at all (aside from Kite credentials, which are
-   unconditional).
-5. If the AWS call fails (missing permissions, secret not found, no
-   network) or the secret body isn't valid JSON, `get_settings()` raises
-   `ConfigurationError` -- the application fails fast at startup instead
-   of silently running with missing/stale credentials.
-
-Expected keys (all optional except `API_KEY`/`API_SECRET`/`ACCESS_TOKEN`,
-all flat plain strings -- maintain this secret as simple key/value rows
-in the Secrets Manager console, no nested JSON needed):
+`AWS_SECRETS_NAME` (default `victor/zerodha/kite`) contains the explicit
+allow-list below as flat key-value pairs. AWS supplies credentials and
+infrastructure only. Watchlists, trading mode, risk policy, and scoring
+settings are edited in the dashboard and persisted in PostgreSQL; these
+keys are not read from AWS. Dashboard rows override corresponding local
+settings when present. The AWS SDK uses its default credential provider
+chain (for example, an attached IAM role); raw AWS access keys are not
+read from this secret.
 
 ```json
 {
   "API_KEY": "your-kite-api-key",
   "API_SECRET": "your-kite-api-secret",
+  "USER_NAME": "your-broker-user",
+  "PASSWORD": "...",
+  "TOTP": "...",
   "ACCESS_TOKEN": "your-kite-access-token",
+  "GIT_TOKEN": "...",
+  "GIT_USER": "...",
   "POSTGRES_HOST": "prod-db.internal",
   "POSTGRES_PORT": "5432",
   "POSTGRES_DATABASE": "algotrading",
@@ -182,45 +143,28 @@ in the Secrets Manager console, no nested JSON needed):
   "REDIS_PORT": "6379",
   "REDIS_PASSWORD": "...",
   "REDIS_SSL": "true",
-  "TRADING_MODE": "paper",
-  "OPTIONS_WATCHLIST": "NIFTY,BANKNIFTY",
-  "EQUITY_WATCHLIST": "RELIANCE,TCS",
-  "RISK_MAX_RISK_PER_TRADE": "1000",
-  "RISK_MIN_RISK_REWARD_RATIO": "1.5",
-  "RISK_TRADING_WINDOW_START": "09:20",
-  "RISK_TRADING_WINDOW_END": "15:00",
-  "RISK_STOP_LOSS_METHOD": "ATR",
-  "RISK_TARGET_REWARD_RATIO": "1.5",
-  "SCORING_WEIGHT_HEAD_AND_SHOULDERS": "40",
-  "SCORING_WEIGHT_ENGULFING": "30",
-  "SCORING_BUY_THRESHOLD": "55",
-  "SCORING_SELL_THRESHOLD": "55"
+  "DASHBOARD_ADMIN_TOKEN": "..."
 }
 ```
 
-Two fields deserve special mention:
+No other secret keys are applied to `Settings`. In particular, AWS keys
+such as `OPTIONS_WATCHLIST`, `EQUITY_WATCHLIST`, `TRADING_MODE`,
+`RISK_*`, or `SCORING_*` are ignored. Configure scoring weights in the
+dashboard with `SCORING_WEIGHT_<PATTERN_NAME>`; unspecified weights use
+the strategy defaults. If the AWS call fails or its body is not valid
+JSON, `get_settings()` raises `ConfigurationError` instead of silently
+using missing credentials.
 
-- `OPTIONS_WATCHLIST` / `EQUITY_WATCHLIST` are both comma-separated
-  strings that **run simultaneously** in the same process -- which one
-  a given underlying belongs to decides whether its `StrategyEngine`
-  buys an option (`OPTIONS_WATCHLIST`, CE/PE, never the underlying
-  itself) or trades the underlying/cash-equity instrument directly
-  (`EQUITY_WATCHLIST`). A symbol can only be in one of the two lists --
-  `Settings` raises `ConfigurationError` at startup if the same symbol
-  appears in both. See `strategy/instrument_mode.py::resolve_instrument_mode`
-  (an underlying in neither list safely defaults to `OPTIONS`) and
-  `StrategyEngine`'s `instrument_mode` constructor argument (built by
-  calling `resolve_instrument_mode` once per underlying, at the same
-  point you construct the engine).
-- `SCORING_WEIGHT_<PATTERN_NAME>` is a **partial override**, one flat
-  key per pattern/indicator name from `strategy/scoring.py::_DEFAULT_WEIGHTS`
-  -- only the patterns you add a key for are changed; everything else
-  keeps its default weight. Build the final `ScoringConfig` via
-  `ScoringConfig.from_settings(settings)` rather than constructing it
-  directly, so these overrides take effect.
+For an `OPTIONS_WATCHLIST` underlying, the cash/index instrument is the
+signal source: scoring analyzes its candles and price, then bullish
+signals select the corresponding CE and bearish signals the PE. The
+selected option's own price is used for risk and execution. For
+`EQUITY_WATCHLIST`, the same tradable cash-equity instrument is used for
+analysis and execution. Indices are signal-only and cannot be in the
+equity execution path. Equivalent aliases such as `NIFTY 50` and
+`NIFTY` resolve to the same underlying for watchlist classification.
 
-Unit tests never call AWS for real -- `tests/unit/test_settings.py`
-monkeypatches `config.settings._fetch_config_secret_from_aws`.
+Unit tests monkeypatch the AWS fetch function and do not access AWS.
 
 ## Trading modes
 

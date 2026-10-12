@@ -119,18 +119,17 @@ fabricated/infinite value. Sharpe/Sortino use a documented, overridable
 annualization (`periods_per_year=252`) and risk-free rate (default zero,
 never a guessed real rate).
 
-**Known limitation -- no exit/position-closing pipeline exists yet:**
-inspecting Phases 7-9 confirms `RiskEngine._check_signal()` rejects any
-non-BUY/SELL `Signal.signal_type` (including `EXIT`) as "not a
-risk-manageable entry" -- there has never been a mechanism anywhere in
-this project for a strategy to close a position it opened, nor anything
-that monitors an open position's stop-loss/target against ongoing price
-movement. Phase 11 does not invent one (per its own "do not implement a
-second version of the risk engine" boundary) -- a backtested/paper
-position can only ever be opened; it remains open (marked-to-market, never
-force-closed or fabricated-closed) until the run ends. This is an accurate
-simulation of what the real system would do today, not a Phase 11 gap --
-see [Safety Mechanisms & Roadmap](../safety-and-limitations.md) for Phase 12 TODOs.
+**Protective exits:** the backtest and paper portfolio evaluate each
+traded instrument's own candles against the persisted stop-loss and target
+levels. For options mode those levels and exit fills are based on the
+selected option premium, not the signal underlying. If both thresholds
+fall within one candle, the simulator conservatively prefers the stop.
+Live mode monitors subscribed ticks for broker-confirmed positions and
+submits protective exits through Phase 9; durable order/protection state
+is restored during startup reconciliation. Monitor-only live mode reports
+threshold crossings but deliberately submits no orders. A lost/stale
+market-data feed cannot provide tick-triggered live protection, so feed
+health must be monitored.
 
 **Paper-session management (`backtest/paper.py`):** `PaperTradingSession`
 is keyed by `strategy_name:instrument_token:timeframe`; `start()` rejects
@@ -143,8 +142,9 @@ foreground until `Ctrl+C`.
 
 **Restart/recovery:** `BacktestRunRepository.list_incomplete()`
 finds runs that never reached `COMPLETED`/`FAILED` (e.g. the process was
-killed mid-run) for manual inspection -- Phase 11 does not auto-resume a
-backtest or auto-resume live execution. A stopped/crashed paper session's
+killed mid-run) for manual inspection -- a backtest is not auto-resumed.
+Live runtime reconciliation restores active position subscriptions and
+persisted protective thresholds before monitoring resumes. A stopped/crashed paper session's
 `last_processed_timestamp`/`summary_metrics` are durably recorded on
 `stop()`; resuming reads only paper-specific durable state, never assumes
 Redis survived, and never auto-enables live trading.
@@ -268,6 +268,15 @@ data-quality warnings, and errors are rendered as readable fields and
 notes. Return bars compare runs in the current result list. The trade
 table includes completed round trips only; final equity and net P/L may
 also include an open position marked to market at the end of the run.
+
+The signal/order audit has separate columns for each configured
+pattern/indicator category. Each cell shows its timeframe, direction,
+weighted score contribution, detector strength, and explanation; a
+category without a match is explicitly shown as zero/no match. The overall
+score remains separate. Risk approval/rejection reason, sizing, order
+state, fill/mark/exit prices, exit reason, and P&L are also shown as
+individual fields. Existing audit records created before component scores
+were persisted continue to display their legacy score-match details.
 
 **What's exposed:** health (`/api/health`), instruments + candles,
 signals/orders/positions/trades (each enriched with its instrument's

@@ -106,17 +106,14 @@ itself fails, the result is downgraded to `RECONCILIATION_FAILED`
 regardless of what was computed -- an un-auditable run is never reported
 as successful.
 
-**Startup / periodic / manual reconciliation:** `TradingEngine` builds a
-`ReconciliationEngine` during `initialize()` (same pattern as Phase 9's
-`OrderExecutionEngine` -- built eagerly, never auto-invoked).
-`run_startup_reconciliation()` and `run_manual_reconciliation(scope)` are
-explicit calls (see `scripts/reconcile.py` for a CLI entry point: `python
-scripts/reconcile.py --scope all|orders|positions`); reconciliation
-succeeding never automatically enables trading. `start_periodic_reconciliation()`
-starts an opt-in `PeriodicReconciliationScheduler` background thread only
-if `RECONCILIATION_INTERVAL_SECONDS` is explicitly set (`None` by
-default); it is a plain bounded sleep loop, not an uncontrolled poll, and
-`shutdown()` stops it.
+**Startup / periodic / manual reconciliation:** `TradingEngine` exposes
+explicit startup/manual/periodic reconciliation methods (see
+`scripts/reconcile.py`). The application-level `LiveTradingRuntime`
+reconciles orders and positions at startup and on its bounded recovery
+interval; unresolved startup mismatches disable new entries while open
+positions continue to be monitored. Reconciliation itself never submits
+corrective orders. A successful manual reconciliation does not by itself
+enable live trading.
 
 **Error handling:** a broker failure fetching orders/positions, or a
 PostgreSQL failure persisting the audit trail, is caught per-scope and
@@ -135,8 +132,8 @@ order pool used for broker tag/id matching, mirroring Kite's own
 `RECONCILIATION_INTERVAL_SECONDS` (unset/`None` by default),
 `RECONCILIATION_AUTO_SYNC_ORDER_STATUS`/`_ORDER_FILL_QUANTITY`/
 `_ORDER_AVERAGE_FILL_PRICE`/`_POSITION_QUANTITY`/`_POSITION_PRICE`/
-`_POSITION_STATUS` (all default `true`). All also read from the existing
-single Secrets Manager secret via the generic per-field loop.
+`_POSITION_STATUS` (all default `true`). These settings use environment
+values or defaults; they are not sourced from the AWS secret allow-list.
 
 **Persistence/migration:** `0009_reconciliation` adds `reconciliation_runs`,
 `order_reconciliation_records`, `position_reconciliation_records`. Apply

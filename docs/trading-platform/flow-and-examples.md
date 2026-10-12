@@ -12,8 +12,11 @@
 At the highest level, the application does five things, in this order,
 every time it runs:
 
-1. **Load configuration** -- read `.env` and/or AWS Secrets Manager, fail
-   immediately if anything required is missing or invalid.
+1. **Load configuration** -- read bootstrap/local settings from `.env`
+   and credentials/infrastructure from the explicit AWS Secrets Manager
+   allow-list; database-backed dashboard settings are applied after
+   PostgreSQL connects. Fail immediately if required configuration is
+   missing or invalid.
 2. **Connect** -- open a connection to PostgreSQL, Redis, and (if
    credentials are present) the Kite broker API and its WebSocket feed.
 3. **Watch the market** -- receive live price ticks, turn them into
@@ -132,11 +135,12 @@ with a 1.5x multiplier, 1.5x reward:risk target, NIFTY lot size 75.
    real market order and records the broker's order ID.
 7. **The position opens.** `PositionManager` records a new open position:
    75 units of `NIFTY-25DEC-22150-CE`, entry ₹142.50.
-8. **What happens next?** Today, nothing automatically closes this
-   position -- there is no exit/stop-loss-monitoring pipeline yet (see
-   [Safety Mechanisms & Roadmap](safety-and-limitations.md#what-remains-to-be-implemented)).
-   The stop-loss/target values are recorded for reference and for a
-   human (or a future Phase 12 exit engine) to act on.
+8. **What happens next?** The live runtime monitors ticks for this
+   broker-confirmed position and submits a protective exit through the
+   Phase 9 execution gate when its stop-loss or target is reached. On a
+   disconnected/stale tick feed it cannot react until market data resumes.
+   In paper/backtest mode the corresponding simulated position is checked
+   against the traded instrument's candle prices; no real order is placed.
 
 ## 4. Worked example: a trade that gets rejected
 

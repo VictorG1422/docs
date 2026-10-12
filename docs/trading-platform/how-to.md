@@ -57,9 +57,10 @@ delete existing instrument or trade rows.
 
 > **Index references:** the NSE dump includes `NIFTY 50` and `NIFTY BANK`
 > (the BANKNIFTY index). They are stored for inspection, with Kite's
-> `INDICES` segment and zero lot/tick sizes; they are not tradable
-> contracts. Use NFO futures/options or a tradable ETF such as
-> `NIFTYBEES` for order sizing and backtests. In the dashboard, search for
+> `INDICES` segment and zero lot/tick sizes; they are not directly tradable.
+> For an options-watchlist underlying, use the index reference as the signal
+> instrument and let the system select/trade its CE/PE. Equity-watchlist entries
+> must be tradable cash equities; an index cannot be directly ordered. In the dashboard, search for
 > `NIFTY BANK` rather than `BANKNIFTY`, which is the familiar name but not
 > Kite's index-master symbol.
 
@@ -90,11 +91,11 @@ trades. Use the sidebar to switch between:
   pattern/indicator weights. Changes are saved to PostgreSQL and take
   effect in trading processes after restart.
 
-To enable editing, set `DASHBOARD_ADMIN_TOKEN` in the dashboard process
-environment and restart it. Enter that token in the settings section
-before saving. Keep it secret: it authorizes changes to trading risk and
-scoring configuration. Editing remains disabled when the variable is
-empty. Apply the database migrations first with `alembic upgrade head`;
+To enable editing, configure `DASHBOARD_ADMIN_TOKEN` in AWS Secrets
+Manager and restart the dashboard process. Enter that token in the
+settings section before saving. Keep it secret: it authorizes changes to
+trading risk and scoring configuration. Editing remains disabled when
+the token is empty. Apply the database migrations first with `alembic upgrade head`;
 migration `0011` adds the score/settings tables and `0012` permits NSE
 index reference rows.
 
@@ -140,35 +141,27 @@ without needing the market to be open.
 
 ### Step 1 — find the instrument token to test
 
-Every instrument has a numeric "token" the system uses internally. The
-easiest way to find one is to ask your already-downloaded instrument
-list. For example, to find the NIFTY 50 ETF's token:
+Every instrument has a numeric token the system uses internally. In options
+mode, use the synchronized cash/index row as the signal source; trade sizing
+uses the selected option's own lot size. To inspect the NIFTY 50 index row:
 
 ```powershell
-python -c "from config.settings import get_settings; from trading_system.storage.postgres import PostgresClient; from trading_system.storage.db.repositories import InstrumentRepository; s=get_settings(); pc=PostgresClient(s.postgres_dsn); session=pc.session().__enter__(); repo=InstrumentRepository(session); r=repo.get_by_token(2707457); print(r.instrument_token, r.tradingsymbol, r.exchange, r.segment, r.instrument_type.value, r.lot_size, r.tick_size)"
+python -c "from sqlalchemy import select; from config.settings import get_settings; from trading_system.storage.postgres import PostgresClient; from trading_system.storage.db.models import Instrument; s=get_settings(); pc=PostgresClient(s.postgres_dsn); session=pc.session().__enter__(); r=session.scalar(select(Instrument).where(Instrument.segment == 'INDICES', Instrument.tradingsymbol == 'NIFTY 50')); print(r.instrument_token, r.tradingsymbol, r.exchange, r.segment, r.instrument_type.value, r.lot_size, r.tick_size)"
 ```
 
-Or, more simply, just reuse the known tokens below — they rarely change:
+Verify the token against the synchronized database:
 
 | What you want to test | Token | Symbol | Exchange/Segment | Lot size |
 | --- | --- | --- | --- | --- |
-| NIFTY 50 index (via its ETF proxy) | `2707457` | `NIFTYBEES` | `NSE` | 1 |
-| NIFTY near-month futures | *(changes monthly — see [Flow & Worked Examples](flow-and-examples.md) for how this was found)* | `NIFTYxxFUT` | `NFO` / `NFO-FUT` | 65 |
-
-> **Why the ETF instead of the raw index or futures?** Your risk settings
-> (see below) limit how much money goes into a single trade. One NIFTY
-> futures lot is worth well over ₹10 lakh — far more than most configured
-> limits allow, so a futures backtest usually rejects every trade with
-> `INSUFFICIENT_CAPITAL`. An ETF like `NIFTYBEES` tracks the same index
-> but trades in much smaller, affordable units, so it's the practical
-> way to test "the index" under realistic account sizes.
+| NIFTY 50 index signal source | `256265` | `NIFTY 50` | `NSE` / `INDICES` | `0` in the instrument master |
+| NIFTY near-month futures | *(changes monthly; not an index signal source)* | `NIFTYxxFUT` | `NFO` / `NFO-FUT` | varies |
 
 ### Step 2 — pick your date range and run it
 
 ```powershell
 python scripts/backtest.py --strategy technical_scoring `
-  --instrument-token 2707457 --underlying NIFTY --tradingsymbol NIFTYBEES `
-  --exchange NSE --segment NSE --instrument-type EQ --lot-size 1 --tick-size 0.01 `
+  --instrument-token 256265 --underlying "NIFTY 50" --tradingsymbol "NIFTY 50" `
+  --exchange NSE --segment INDICES --instrument-type EQ --lot-size 1 --tick-size 0.05 `
   --interval-minutes 5 --start 2026-09-28 --end 2026-10-03 --initial-capital 100000
 ```
 
@@ -177,8 +170,8 @@ What each option means:
 | Option | What it controls |
 | --- | --- |
 | `--strategy` | Which decision-making logic to test. `technical_scoring` is the ready-to-use generic strategy; `no_op` never trades (useful only for testing the pipeline itself). |
-| `--instrument-token`, `--underlying`, `--tradingsymbol` | Which instrument to test, found in Step 1. |
-| `--exchange`, `--segment`, `--instrument-type`, `--lot-size`, `--tick-size` | The instrument's own details — copy these from the same lookup as the token. |
+| `--instrument-token`, `--underlying`, `--tradingsymbol` | The underlying cash/index instrument whose candles drive signal generation. |
+| `--exchange`, `--segment`, `--instrument-type`, `--lot-size`, `--tick-size` | Signal-instrument metadata. In OPTIONS mode the selected contract has its own execution metadata and lot size. |
 | `--interval-minutes` | The candle size the strategy reacts to (5-minute candles here). |
 | `--start` / `--end` | The historical date range, `YYYY-MM-DD`. |
 | `--initial-capital` | The pretend starting balance, in rupees. |
@@ -197,9 +190,9 @@ The last line printed tells you everything:
 - **`net_pnl`** — final_equity minus your starting capital. This is the
   number you actually care about.
 - **`total_trades`** — only counts trades that were **fully closed**
-  (bought and then sold again). This system doesn't yet have an
-  automatic "exit" feature (see [Safety Mechanisms & Roadmap](safety-and-limitations.md)),
-  so a position that's still open at the end of the backtest shows up in
+  (bought and then sold again). Stop-loss/target exits are simulated from
+  the traded instrument's candles, but a position still open at the end
+  of the backtest shows up in
   `net_pnl`/`final_equity` but **not** in `total_trades`. Don't be
   surprised to see `total_trades: 0` alongside a nonzero `net_pnl` — that
   means a trade is open and currently profitable/at a loss, not that
@@ -212,9 +205,9 @@ For a complete, real worked example with every number explained, see
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| `INSUFFICIENT_CAPITAL` rejections | The position size this trade needs is bigger than your configured risk/exposure limits allow. | Test a smaller-notional instrument (an ETF instead of futures), or raise `RISK_MAX_EXPOSURE`/`RISK_MAX_RISK_PER_TRADE` (see below). |
+| `INSUFFICIENT_CAPITAL` rejections | The selected option/equity position exceeds configured risk or exposure limits. | Review the contract and persisted risk checks in the backtest audit before changing limits. |
 | `OUTSIDE_TRADING_WINDOW` on every signal | Shouldn't happen anymore — `backtest.py` automatically ignores your live trading-hours settings since a backtest replays a past date, not right now. If you still see this, your copy of the script may be out of date. | Pull the latest `scripts/backtest.py`. |
-| Zero signals the whole run (`no_signal` every time) | The strategy genuinely never found a setup worth acting on in that date range. This is a normal, valid result. | Try a longer date range, a different instrument, or a different `--interval-minutes`. |
+| Zero trades despite signal activity | Option contract/premium candles may be unavailable, or risk checks may reject signals. | Inspect score-component columns, signal/risk reasons, and data-quality warnings in the run audit. |
 | `status: FAILED` | Something broke — most commonly, the database schema isn't up to date. | Run `alembic upgrade head` (see "How to update the database" below), then try again. |
 
 ## How to run paper (live) trading
@@ -277,22 +270,19 @@ for the current state of this).
 
 ## How to change settings
 
-Settings come from these sources, in order of precedence:
-
-1. **Dashboard database overrides** — for the allow-listed watchlists,
-  risk and scoring settings edited in the dashboard. These are loaded
-  when each trading process starts and override corresponding
-  environment values.
-2. **AWS Secrets Manager** (one secret, `victor/zerodha/kite` by
-  default) — supplies deployment configuration when a database
-  override does not exist.
-3. **Your local `.env` file** — used for values not supplied by the
-  secret, and the easiest way to configure a local machine.
+Configuration has distinct owners. AWS Secrets Manager
+(`victor/zerodha/kite`) supplies the allow-listed broker/Git credentials,
+PostgreSQL/Redis connection values, and dashboard admin token.
+PostgreSQL dashboard settings supply watchlists, trading mode, risk
+controls, and scoring weights/thresholds; saved rows override
+corresponding local settings when present. `.env` supplies bootstrap and
+local/runtime values such as AWS region/secret name, app environment,
+and log level.
 
 Dashboard edits are validated and audited in PostgreSQL. Restart the
 trading process for them to take effect; settings are not hot-reloaded.
-The dashboard admin token is environment-only and is never stored in
-PostgreSQL or sourced from AWS Secrets Manager.
+The dashboard admin token comes from AWS Secrets Manager and is not
+stored in PostgreSQL.
 
 ### Settings you'll most commonly want to change
 

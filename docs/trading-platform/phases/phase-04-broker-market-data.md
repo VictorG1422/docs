@@ -55,6 +55,13 @@ decision for a later phase.
   -- tracks the active instrument-token subscription set and makes
   subscribe/unsubscribe idempotent. Independent of any strategy; never
   hardcodes NIFTY/BANKNIFTY/expiry/strike.
+- `KiteWebSocketClient` records requested tokens before connection and
+  sends subscriptions only after Kite's connected callback. It restores
+  the active token set after reconnect; unsubscribe-before-connect removes
+  queued tokens so they are not accidentally restored. Subscription state
+  and server delivery are distinct: operational checks should confirm the
+  connected/subscription events and, while the market is open, receipt of
+  ticks for a subscribed token.
 - `trading_system/market_data/tick_processor.py::TickProcessor` now
   rejects obviously malformed ticks (non-positive instrument token,
   negative price) before they reach `MarketState` or Redis, and

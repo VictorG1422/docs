@@ -42,7 +42,10 @@ EQ/index instrument tokens:
 - **Options watchlist:** strategy evaluates the selected underlying EQ or
   index candles; a BUY/SELL decision selects and trades the corresponding
   CE/PE contract. The contract's own market price, lot size, stop, and
-  target are used for option risk and order calculations.
+  target are used for option risk and order calculations. Saving the
+  watchlist requires synchronized CE and PE contracts for a common
+  eligible expiry; a call and put from different expiries do not satisfy
+  this validation.
 - **Equity watchlist:** strategy evaluates the selected tradable cash EQ
   and orders that same EQ. Risk levels derive from that equity's price.
 

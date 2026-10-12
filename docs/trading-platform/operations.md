@@ -56,6 +56,14 @@ shows, and the "Dashboard addendum" section of
 [Phase 11](phases/phase-11-backtesting-paper.md) for the full design
 write-up. Supports `--host`, `--port`, and `--reload` (development only).
 
+If saving an options watchlist returns HTTP 422 with a missing CE/PE
+contracts message, check that NSE and NFO instrument data is synchronized
+using `python scripts/download_instruments.py`, and confirm the database
+has both option types at a common eligible expiry. The rejected save
+leaves the previous watchlist setting unchanged. Restart the dashboard
+process after deploying backend changes; an existing server does not
+reload application code unless started with development `--reload`.
+
 ## Running with Docker
 
 ```powershell

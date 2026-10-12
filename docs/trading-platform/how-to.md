@@ -83,6 +83,8 @@ the stored JSON value is the numeric array `[256265]`, not `["NIFTY 50"]`
 or `["256265"]`. Keep `EQUITY_WATCHLIST` as `[]` unless adding tradable
 cash equities. Prefer the migration command over a direct SQL update so
 the conversion is validated and recorded in the settings audit table.
+NIFTY BANK is token `260105`, so selecting both indices gives
+`OPTIONS_WATCHLIST=[256265,260105]`.
 
 ## How to view the dashboard
 
@@ -135,12 +137,26 @@ Every displayed date/time is explicitly formatted in **IST
 (`Asia/Kolkata`)**, regardless of the browser or computer timezone.
 
 To enable editing, configure `DASHBOARD_ADMIN_TOKEN` in AWS Secrets
-Manager and restart the dashboard process. Enter that token in the
-settings section before saving. Keep it secret: it authorizes changes to
-trading risk and scoring configuration. Editing remains disabled when
-the token is empty. Apply the database migrations first with `alembic upgrade head`;
-migration `0011` adds the score/settings tables and `0012` permits NSE
-index reference rows.
+Manager and restart the dashboard process. Enter that token on the
+Instruments & watchlists page to save watchlists; enter it on the relevant
+settings page to save risk or scoring settings. Keep it secret: it
+authorizes changes to trading risk and scoring configuration. Editing
+remains disabled when the token is empty. Apply the database migrations
+first with `alembic upgrade head`; migration `0011` adds the score/settings
+tables and `0012` permits NSE index reference rows.
+
+When saving an options watchlist, the API requires the synchronized
+instrument master to contain both CE and PE contracts for at least one
+shared expiry that satisfies the configured minimum days to expiry. The
+call and put must have the **same expiry**. A `422 Unprocessable Content`
+response with a message about missing synchronized CE/PE contracts means
+this check did not pass in the database used by the running dashboard.
+Refresh/synchronize NSE and NFO instrument data with
+`python scripts/download_instruments.py`, check that both option types
+exist for a common eligible expiry, and retry. A rejected save does not
+change the saved settings. After installing a backend code update, restart
+the dashboard process before retrying; an already-running server continues
+to use the code loaded when it started.
 
 The three colored dots next to the logo show whether PostgreSQL, Redis,
 and your Kite connection are currently healthy (the same check as

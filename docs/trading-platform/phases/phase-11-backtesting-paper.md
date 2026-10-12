@@ -278,6 +278,24 @@ state, fill/mark/exit prices, exit reason, and P&L are also shown as
 individual fields. Existing audit records created before component scores
 were persisted continue to display their legacy score-match details.
 
+The Instruments page provides independent search/select/Add controls for
+the options and equity watchlists and displays every selected entry with a
+Remove action. These edits remain in the page until **Save watchlists** is
+used. Saved option-underlying tokens must resolve to synchronized EQ/index
+instruments, and the NFO master must contain CE and PE contracts for at
+least one common expiry on or after the configured minimum-days-to-expiry
+date. The validator checks each expiry as a pair; separate CE and PE
+availability at different expiries is insufficient. A failed validation
+returns HTTP 422 and leaves the saved settings unchanged.
+
+The `/api/dashboard/settings` GET response exposes the saved database
+values and readable instrument labels. For example, NIFTY 50 is index
+token `256265`, represented as the JSON number array `[256265]`; NIFTY
+BANK is `260105`. The UI submits complete watchlist arrays when saving,
+so retaining entries in the page's selected lists is necessary to keep
+them in the saved configuration. Restart the dashboard after deploying a
+backend update so the running process uses the updated validation logic.
+
 **What's exposed:** health (`/api/health`), instruments + candles,
 signals/orders/positions/trades (each enriched with its instrument's
 `tradingsymbol`/token via `api/queries.py::instrument_extras_by_row_id()`

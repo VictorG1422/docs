@@ -166,8 +166,27 @@ and token; only the exact instrument token is stored in the watchlist.
 This removes symbol-alias ambiguity, but the token must still exist in
 the current synchronized instrument master. Indices are signal-only and
 cannot be in the equity execution path. OPTIONS entries also require
-synchronized future CE and PE contracts that meet the configured minimum
-days-to-expiry rule.
+synchronized CE **and** PE contracts for at least one common expiry on or
+after the configured minimum-days-to-expiry date. Having calls at one
+expiry and puts only at another does not qualify.
+
+For example, the NSE index `NIFTY 50` uses token `256265`. Its options
+watchlist value is the JSON numeric array `[256265]`, not a display name.
+`NIFTY BANK` uses index token `260105`; a watchlist containing both looks
+like `[256265, 260105]`. Keep `EQUITY_WATCHLIST` as `[]` unless adding
+tradable cash-equity tokens.
+
+The dashboard validates the watchlists when saving them. A `422
+Unprocessable Content` message saying that an options token has no
+synchronized CE/PE contracts means the running dashboard process did not
+find an eligible call and put for a shared expiry in PostgreSQL. Confirm
+both NSE and NFO have been synchronized with
+`python scripts/download_instruments.py` and inspect the contract
+expiries. A rejected save leaves the existing database setting unchanged.
+If a backend update was just installed, restart the dashboard process so
+it loads the updated validator before retrying. The current validator
+groups CE/PE contracts by expiry; it does not combine a call from one
+expiry with a put from another.
 
 Before deploying token-based watchlists to a database with existing
 symbol values, synchronize NSE and NFO instruments using the currently

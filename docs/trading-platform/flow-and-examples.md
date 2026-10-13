@@ -220,7 +220,7 @@ never heard of at all, always requires a human to look at it -- see
 
 ```powershell
 python scripts/backtest.py --strategy technical_scoring `
-  --instrument-token 256265 --start 2026-01-01 --end 2026-03-31 `
+  --instrument-token 256265 260105 --start 2026-01-01 --end 2026-03-31 `
   --initial-capital 100000
 ```
 
@@ -229,16 +229,17 @@ What happens when this runs:
 1. A brand-new, empty SQLite database and an in-memory Redis are created
    just for this one run -- completely separate from your real
    PostgreSQL/Redis, so a backtest can never affect real data.
-2. Historical candles for instrument `256265` between the two dates are
-   loaded (from PostgreSQL if already synced, otherwise from Kite's
-   historical-data API).
+2. Historical candles for both underlying instruments between the two
+   dates are loaded (from PostgreSQL if already synced, otherwise from
+   Kite's historical-data API), then replayed in timestamp order.
 3. The *exact same* `StrategyEngine` → `RiskEngine` →
    `OrderExecutionEngine` pipeline described in section 2 runs candle by
    candle, in order, exactly as it would live -- except every "send the
    order" step goes to a simulated adapter instead of Kite, and a
    signal can only ever fill using a *later* candle's price (never the
    candle that generated it, which would be cheating).
-4. At the end of the run, a `BacktestResult` is produced: for example,
+4. The two instruments share one virtual portfolio and starting capital.
+   At the end of the run, a single `BacktestResult` is produced: for example,
    *42 trades, 58% win rate, profit factor 1.7, max drawdown 6.2%* --
    and a summary row is saved to the real database's `backtest_runs` /
    `backtest_trades` tables so past runs can be compared later.

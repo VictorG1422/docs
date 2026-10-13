@@ -187,24 +187,41 @@ Verify the token against the synchronized database:
 | What you want to test | Token | Symbol | Exchange/Segment | Lot size |
 | --- | --- | --- | --- | --- |
 | NIFTY 50 index signal source | `256265` | `NIFTY 50` | `NSE` / `INDICES` | `0` in the instrument master |
+| NIFTY BANK index signal source | `260105` | `NIFTY BANK` | `NSE` / `INDICES` | `0` in the instrument master |
 | NIFTY near-month futures | *(changes monthly; not an index signal source)* | `NIFTYxxFUT` | `NFO` / `NFO-FUT` | varies |
 
 ### Step 2 — pick your date range and run it
 
 ```powershell
 python scripts/backtest.py --strategy technical_scoring `
-  --instrument-token 256265 --underlying "NIFTY 50" --tradingsymbol "NIFTY 50" `
-  --exchange NSE --segment INDICES --instrument-type EQ --lot-size 1 --tick-size 0.05 `
+  --instrument-token 256265 `
   --interval-minutes 5 --start 2026-09-28 --end 2026-10-03 --initial-capital 100000
 ```
+
+Pass multiple instrument tokens to replay them together in one shared
+portfolio run. For example, this runs NIFTY 50 and NIFTY BANK through the
+same options-mode strategy and capital/risk limits:
+
+```powershell
+python scripts/backtest.py --strategy technical_scoring `
+  --instrument-token 256265 260105 `
+  --interval-minutes 5 --start 2026-10-07 --end 2026-10-12 --initial-capital 100000
+```
+
+All tokens must be synchronized underlying EQ/index instruments with the
+same effective trading mode. Backtest instrument metadata is read from the
+synced instrument master. The dashboard records one run/configuration,
+combines both instruments' replayed candles chronologically, and applies
+one shared starting capital and risk limits; it is not two independent
+backtests.
 
 What each option means:
 
 | Option | What it controls |
 | --- | --- |
 | `--strategy` | Which decision-making logic to test. `technical_scoring` is the ready-to-use generic strategy; `no_op` never trades (useful only for testing the pipeline itself). |
-| `--instrument-token`, `--underlying`, `--tradingsymbol` | The underlying cash/index instrument whose candles drive signal generation. |
-| `--exchange`, `--segment`, `--instrument-type`, `--lot-size`, `--tick-size` | Signal-instrument metadata. In OPTIONS mode the selected contract has its own execution metadata and lot size. |
+| `--instrument-token` | One or more underlying cash/index instrument tokens whose candles drive signal generation. Metadata is loaded from the synchronized instrument master. |
+| `--underlying`, `--tradingsymbol`, `--exchange`, `--segment`, `--instrument-type`, `--lot-size`, `--tick-size` | Optional overrides for a single-token run only. In OPTIONS mode, the selected contract has its own execution metadata and lot size. |
 | `--interval-minutes` | The candle size the strategy reacts to (5-minute candles here). |
 | `--start` / `--end` | The historical date range, `YYYY-MM-DD`. |
 | `--initial-capital` | The pretend starting balance, in rupees. |

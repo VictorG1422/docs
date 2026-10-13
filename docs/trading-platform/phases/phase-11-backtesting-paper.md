@@ -150,9 +150,12 @@ persisted protective thresholds before monitoring resumes. A stopped/crashed pap
 Redis survived, and never auto-enables live trading.
 
 **CLI:** `scripts/backtest.py` (`--strategy no_op|technical_scoring
---instrument-token ... --start YYYY-MM-DD --end YYYY-MM-DD
---initial-capital ...`) and `scripts/paper_trade.py start|status`. No web
-framework was added.
+--instrument-token TOKEN [TOKEN ...] --start YYYY-MM-DD --end YYYY-MM-DD
+--initial-capital ...`) and `scripts/paper_trade.py start|status`. Multiple
+underlying tokens are merged into one chronological replay with one shared
+portfolio, capital pool, risk engine, and persisted run; metadata comes
+from the synchronized instrument master. A run fails if any requested
+underlying has no historical candles. No web framework was added.
 
 **Persistence/migration:** `0010_backtest_paper` adds `backtest_runs`,
 `backtest_trades`, `paper_sessions`. Apply `alembic upgrade head` before

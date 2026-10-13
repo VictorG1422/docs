@@ -246,6 +246,15 @@ repeatedly, existing rows are updated in place rather than duplicated.
 NSE sync includes `NIFTY 50` and `NIFTY BANK` index references; these have
 zero lot/tick sizes and are for dashboard inspection, not order placement.
 
+## Kite market-data WebSocket
+
+Paper and live runtimes wait for the initial Kite WebSocket handshake before
+reporting the runtime as started. The client negotiates TLS 1.2 with Kite's
+WebSocket endpoint. If startup reports a WebSocket error, check the structured
+`KITE_ERROR` and `KITE_WS_DISCONNECTED` logs, confirm the daily Kite access
+token is current, and verify outbound connectivity to `ws.kite.trade:443`.
+This check does not place orders.
+
 ## Logging
 
 `configure_logging()` (`utils/logger.py`) installs one consistent setup

@@ -85,10 +85,9 @@ Key design decisions behind the real pipeline:
   └── logs/                        # local scratch data (gitignored contents)
   ```
   order requires a persisted, risk-approved `TradeIntent`
-  *and* three separate environment settings all agreeing
-  (`ORDER_EXECUTION_ENABLED=true`, `APP_ENV=production`,
-  `TRADING_MODE=live`). Missing any one of the three keeps every order
-  simulated, regardless of what the strategy decides.
+  *and* the independent gates `ORDER_EXECUTION_ENABLED=true`,
+  `APP_ENV=production`, and the database-selected `APPLICATION_MODE=live`.
+  Missing any gate prevents real order submission.
 - **Storage is split by how fast and how durable the data needs to be**:
   PostgreSQL holds everything that must survive a restart and be
   auditable (orders, positions, trades, signals, instruments); Redis
@@ -153,7 +152,7 @@ trading_platform/
 ├── scripts/
 │   ├── download_instruments.py
 │   ├── health_check.py
-│   └── run_dashboard.py          # Phase 11 addendum: serve the dashboard (uvicorn)
+│   └── run_dashboard.py          # compatibility shim to the unified entry point
 ├── tests/
 │   ├── conftest.py
 │   ├── unit/

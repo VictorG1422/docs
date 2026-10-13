@@ -74,12 +74,19 @@ no AWS override for database-managed strategy or scoring values.
 | `S3_BUCKET_NAME` | *(empty)* | Bucket used for snapshots/archival storage. |
 | `AWS_SECRETS_NAME` | `victor/zerodha/kite` | AWS Secrets Manager secret containing only the allow-listed credentials and infrastructure settings. Read from `.env`/environment so the secret can be located. |
 | `DASHBOARD_ADMIN_TOKEN` | *(empty)* | AWS secret key for authorizing dashboard configuration writes; an empty value disables editing. |
+| `DASHBOARD_HOST` / `DASHBOARD_PORT` | `127.0.0.1` / `8000` | Environment/bootstrap settings for the unified dashboard/API listener. |
+| `APPLICATION_MODE` | `paper` | PostgreSQL dashboard setting selecting exactly one workflow: `backtest`, `paper`, or `live`. |
+| `STRATEGY_NAME` | `technical_scoring` | PostgreSQL dashboard setting selecting `technical_scoring` or `no_op`. |
+| `PAPER_INITIAL_CAPITAL` / `PAPER_CANDLE_INTERVAL_MINUTES` | `100000` / `5` | PostgreSQL dashboard settings for paper session capital and candle interval. |
+| `BACKTEST_INSTRUMENT_MODE` | `OPTIONS` | PostgreSQL dashboard setting choosing the options or equity watchlist for the configured backtest. |
+| `BACKTEST_START_DATE` / `BACKTEST_END_DATE` | *(unset)* | PostgreSQL dashboard dates (`YYYY-MM-DD`); both are required when `APPLICATION_MODE=backtest`. The end date is inclusive. |
+| `BACKTEST_CANDLE_INTERVAL_MINUTES` / `BACKTEST_INITIAL_CAPITAL` | `5` / `100000` | PostgreSQL dashboard settings for backtest interval and starting capital. |
 | `OPTIONS_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: synchronized underlying EQ instrument-token IDs. The selected index/stock EQ candles generate signals; the corresponding CE/PE contract is traded. |
 | `EQUITY_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: synchronized tradable cash-EQ instrument-token IDs. Each selected instrument generates signals and is itself traded. |
 | `SCORING_WEIGHT_<PATTERN_NAME>` | *(unset)* | PostgreSQL dashboard setting per pattern/indicator; overrides that entry in `scoring._DEFAULT_WEIGHTS`. |
 | `SCORING_BUY_THRESHOLD` / `SCORING_SELL_THRESHOLD` | *(unset)* | PostgreSQL dashboard settings for `ScoringConfig` buy/sell thresholds (defaults `50`). |
-| `TRADING_MODE` | `paper` | PostgreSQL dashboard setting: `paper` (simulated) or `live` (live market-data mode; does not itself authorize orders). |
-| `ORDER_EXECUTION_ENABLED` | `false` | Environment/`.env` only; not dashboard-editable. Live submission additionally requires `APP_ENV=production` and `TRADING_MODE=live`. |
+| `TRADING_MODE` | `paper` | Legacy environment/database compatibility field. Use PostgreSQL `APPLICATION_MODE` for runtime selection. |
+| `ORDER_EXECUTION_ENABLED` | `false` | Trusted environment/`.env` only; not dashboard-editable. Live submission additionally requires `APP_ENV=production`, `APPLICATION_MODE=live`, and valid Kite credentials. |
 | `EXECUTION_ORDER_TYPE` | `MARKET` | Environment/`.env` only; Phase 9 `MARKET`, `LIMIT`, `SL`, or `SL-M`. Stop order types require an explicit entry trigger in the intent metadata; no protective stop orders are generated. |
 | `EXECUTION_PRODUCT` | `MIS` | Environment/`.env` only; broker-supported `MIS`, `NRML`, or `CNC` product. |
 | `EXECUTION_VALIDITY` | `DAY` | Environment/`.env` only; broker-supported `DAY` or `IOC` order validity. |
@@ -209,13 +216,15 @@ Unit tests monkeypatch the AWS fetch function and do not access AWS.
 
 ## Trading modes
 
-- `TRADING_MODE=paper` (**default**) -- all orders are simulated
-  in-memory via `PaperExecutionHandler`. No real orders are ever placed,
-  and no Kite order-placement credentials are required.
-- `TRADING_MODE=live` -- selects live broker authentication/mode, but
-  **does not enable order submission**. `ORDER_EXECUTION_ENABLED=true`
-  and `APP_ENV=production` are additionally required by Phase 9, along
-  with valid `KITE_API_KEY`/`KITE_ACCESS_TOKEN` from AWS Secrets Manager.
-  The legacy signal-based `LiveExecutionHandler` fails closed; only a
-  risk-approved intent through `OrderExecutionEngine` can reach the
-  `KiteBrokerAdapter` after all gates pass.
+- The PostgreSQL `APPLICATION_MODE` dashboard setting selects exactly one
+  workflow: `backtest`, `paper` (the default), or `live`. Configure it and
+  mode-specific parameters in the dashboard; saved values take effect
+  after restarting `python -m trading_system.main`.
+- `backtest` runs the configured historical interval/date/watchlist once
+  after startup and persists its result for the dashboard.
+- `paper` consumes live market data but simulates order execution; it
+  never places real orders.
+- `live` selects the protected live runtime. It is monitor-only unless
+  the trusted `ORDER_EXECUTION_ENABLED=true` gate, `APP_ENV=production`,
+  and valid Kite credentials are all present. The execution gate is
+  never stored in or editable through PostgreSQL.

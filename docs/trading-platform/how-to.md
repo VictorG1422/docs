@@ -93,13 +93,15 @@ can *see* the data directly in a browser instead of reading raw log
 lines or querying the database by hand:
 
 ```powershell
-python scripts/run_dashboard.py
+python -m trading_system.main
 ```
 
-Open `http://127.0.0.1:8000/` in any browser. The dashboard reads its
-trading records from PostgreSQL and has a protected editor for the
-allow-listed risk and scoring settings. It cannot place orders or approve
-trades. Use the shared sidebar to open independent, bookmarkable pages:
+This is the only application command. It starts the dashboard/API and the
+single workflow selected by the PostgreSQL `APPLICATION_MODE` setting.
+Open `http://127.0.0.1:8000/` (or the configured dashboard host/port) in
+any browser. The dashboard reads trading records from PostgreSQL and has
+a protected editor for allow-listed runtime, risk, watchlist, and scoring
+settings. Use the shared sidebar to open independent, bookmarkable pages:
 
 - **Dashboard** (`/`) — filled trades, open positions, realized and unrealized
   P/L, win ratio, failed/pending orders, and activity counts. Available
@@ -127,8 +129,9 @@ trades. Use the shared sidebar to open independent, bookmarkable pages:
   rejected signals. The audit table expands score components into separate
   timeframe, direction, contribution, strength, weight, multiplier, and
   detail columns; every risk check has its own status and reason columns.
-- **Trading & risk settings** (`/risk-settings`) — trading mode, risk
-  limits, trading hours, and stop-loss/target parameters.
+- **Trading & risk settings** (`/risk-settings`) — application mode,
+  strategy, paper/backtest parameters, risk limits, trading hours, and
+  stop-loss/target parameters.
 - **Operational pages** — Signals, Orders, Positions, Trades, Risk
   Decisions, Trade Intents, Reconciliation, Candles, and Paper Sessions
   each have their own page and refresh action.
@@ -137,13 +140,14 @@ Every displayed date/time is explicitly formatted in **IST
 (`Asia/Kolkata`)**, regardless of the browser or computer timezone.
 
 To enable editing, configure `DASHBOARD_ADMIN_TOKEN` in AWS Secrets
-Manager and restart the dashboard process. Enter that token on the
+Manager and restart the application. Enter that token on the
 Instruments & watchlists page to save watchlists; enter it on the relevant
 settings page to save risk or scoring settings. Keep it secret: it
 authorizes changes to trading risk and scoring configuration. Editing
 remains disabled when the token is empty. Apply the database migrations
 first with `alembic upgrade head`; migration `0011` adds the score/settings
-tables and `0012` permits NSE index reference rows.
+tables, `0012` permits NSE index reference rows, and `0013` migrates and
+seeds the unified runtime configuration.
 
 When saving an options watchlist, the API requires the synchronized
 instrument master to contain both CE and PE contracts for at least one
@@ -158,12 +162,16 @@ change the saved settings. After installing a backend code update, restart
 the dashboard process before retrying; an already-running server continues
 to use the code loaded when it started.
 
-The three colored dots next to the logo show whether PostgreSQL, Redis,
+The current configured workflow and its startup/completion status are
+available at `/api/runtime`. An invalid runtime configuration leaves the
+dashboard available for correction and prevents that workflow from
+starting. The three colored dots next to the logo show whether PostgreSQL, Redis,
 and your Kite connection are currently healthy (the same check as
 `scripts/health_check.py`) and refresh automatically every 20 seconds.
 
-Stop it with `Ctrl+C` like any other script here — it holds no state of
-its own and is always safe to stop and restart.
+Stop the unified process with `Ctrl+C`. `scripts/run_dashboard.py` is a
+compatibility shim and starts the same unified application; it does not
+start a dashboard-only process.
 
 ## How to run a backtest
 
@@ -190,103 +198,51 @@ Verify the token against the synchronized database:
 | NIFTY BANK index signal source | `260105` | `NIFTY BANK` | `NSE` / `INDICES` | `0` in the instrument master |
 | NIFTY near-month futures | *(changes monthly; not an index signal source)* | `NIFTYxxFUT` | `NFO` / `NFO-FUT` | varies |
 
-### Step 2 — pick your date range and run it
+### Step 2 — configure and start the backtest
+
+On **Trading & risk settings** (`/risk-settings`), select `Backtest` as
+the application mode, choose the strategy and instrument mode, set the
+start/end dates, candle interval, and initial capital. Add the underlying
+instrument token(s) to the matching options or equity watchlist on
+**Instruments & watchlists**. Save the settings, then start or restart the
+application:
 
 ```powershell
-python scripts/backtest.py --strategy technical_scoring `
-  --instrument-token 256265 `
-  --interval-minutes 5 --start 2026-09-28 --end 2026-10-03 --initial-capital 100000
+python -m trading_system.main
 ```
 
-Pass multiple instrument tokens to replay them together in one shared
-portfolio run. For example, this runs NIFTY 50 and NIFTY BANK through the
-same options-mode strategy and capital/risk limits:
-
-```powershell
-python scripts/backtest.py --strategy technical_scoring `
-  --instrument-token 256265 260105 `
-  --interval-minutes 5 --start 2026-10-07 --end 2026-10-12 --initial-capital 100000
-```
-
-All tokens must be synchronized underlying EQ/index instruments with the
-same effective trading mode. Backtest instrument metadata is read from the
-synced instrument master. The dashboard records one run/configuration,
-combines both instruments' replayed candles chronologically, and applies
-one shared starting capital and risk limits; it is not two independent
-backtests.
-
-What each option means:
-
-| Option | What it controls |
-| --- | --- |
-| `--strategy` | Which decision-making logic to test. `technical_scoring` is the ready-to-use generic strategy; `no_op` never trades (useful only for testing the pipeline itself). |
-| `--instrument-token` | One or more underlying cash/index instrument tokens whose candles drive signal generation. Metadata is loaded from the synchronized instrument master. |
-| `--underlying`, `--tradingsymbol`, `--exchange`, `--segment`, `--instrument-type`, `--lot-size`, `--tick-size` | Optional overrides for a single-token run only. In OPTIONS mode, the selected contract has its own execution metadata and lot size. |
-| `--interval-minutes` | The candle size the strategy reacts to (5-minute candles here). |
-| `--start` / `--end` | The historical date range, `YYYY-MM-DD`. |
-| `--initial-capital` | The pretend starting balance, in rupees. |
-
-### Step 3 — read the result
-
-The last line printed tells you everything:
-
-```json
-{"event": "Backtest finished", "status": "COMPLETED", "total_trades": 0, "net_pnl": "1840.0000", "final_equity": "101840.0000", "errors": []}
-```
-
-- **`status: COMPLETED`** — the run finished properly. (`FAILED` means
-  something broke — check the `errors` list.)
-- **`final_equity`** — what your pretend account is worth at the end.
-- **`net_pnl`** — final_equity minus your starting capital. This is the
-  number you actually care about.
-- **`total_trades`** — only counts trades that were **fully closed**
-  (bought and then sold again). Stop-loss/target exits are simulated from
-  the traded instrument's candles, but a position still open at the end
-  of the backtest shows up in
-  `net_pnl`/`final_equity` but **not** in `total_trades`. Don't be
-  surprised to see `total_trades: 0` alongside a nonzero `net_pnl` — that
-  means a trade is open and currently profitable/at a loss, not that
-  nothing happened.
-
-For a complete, real worked example with every number explained, see
-[Flow & Worked Examples](flow-and-examples.md#6-worked-example-running-a-backtest).
+The configured backtest runs once in the background while the same
+process serves the dashboard/API. Inspect its persisted run, audit, and
+trades on `/backtests`; `GET /api/runtime` reports whether it is running,
+completed, or failed. A backtest requires both dates and at least one
+synchronized token in the selected watchlist. The end date is inclusive.
+The old `scripts/backtest.py` path is only a compatibility shim; it
+accepts no backtest arguments.
 
 ### Backtest troubleshooting
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | `INSUFFICIENT_CAPITAL` rejections | The selected option/equity position exceeds configured risk or exposure limits. | Review the contract and persisted risk checks in the backtest audit before changing limits. |
-| `OUTSIDE_TRADING_WINDOW` on every signal | Shouldn't happen anymore — `backtest.py` automatically ignores your live trading-hours settings since a backtest replays a past date, not right now. If you still see this, your copy of the script may be out of date. | Pull the latest `scripts/backtest.py`. |
+| `OUTSIDE_TRADING_WINDOW` on every signal | Trading-window checks use live session time; historical runs clear those wall-clock-only guards. | Inspect the backtest run audit and application logs. |
 | Zero trades despite signal activity | Option contract/premium candles may be unavailable, or risk checks may reject signals. | Inspect score-component columns, signal/risk reasons, and data-quality warnings in the run audit. |
 | `status: FAILED` | Something broke — most commonly, the database schema isn't up to date. | Run `alembic upgrade head` (see "How to update the database" below), then try again. |
 
-## How to run paper (live) trading
+## How to run paper trading
 
-Paper trading is like a backtest, except it watches the **real, live**
-market tick by tick instead of replaying history. No real orders are
-ever placed — every fill is simulated — but everything else behaves
-exactly like the live system would.
-
-**This only works while the market is actually open**: Monday–Friday,
-09:15–15:30 IST (and not on NSE holidays).
+Paper trading watches real-time market data while simulating orders and
+fills. Configure `APPLICATION_MODE=paper`, the strategy, candle interval,
+and one or more synchronized underlying instruments in the dashboard,
+save, and run the single application command:
 
 ```powershell
-python scripts/paper_trade.py start --strategy technical_scoring `
-  --instrument-token 12468226 --underlying NIFTY --tradingsymbol NIFTY26OCTFUT `
-  --interval-minutes 5 --initial-capital 100000
+python -m trading_system.main
 ```
 
-The flags mean the same thing as for a backtest, minus the date range
-(there isn't one — it watches whatever happens from the moment you start
-it). It runs in your terminal until you stop it with `Ctrl+C`.
-
-To check on a session you started earlier (even from another terminal):
-
-```powershell
-python scripts/paper_trade.py status --session-key technical_scoring_strategy:12468226:5
-```
-
-(The session key is just `<strategy>_strategy:<instrument-token>:<interval-minutes>`.)
+The dashboard/API stays in that process. Paper sessions and runtime
+failures are visible on the dashboard and at `/api/runtime`. No real
+orders are placed in paper mode. The old `scripts/paper_trade.py` path is
+only a compatibility shim and accepts no session arguments.
 
 ## How to go live (placing real orders) — read this first
 
@@ -294,9 +250,10 @@ python scripts/paper_trade.py status --session-key technical_scoring_strategy:12
 separate places at once.** All three must be explicitly set for a real
 order to ever reach your broker:
 
-1. `TRADING_MODE=live`
-2. `APP_ENV=production`
-3. `ORDER_EXECUTION_ENABLED=true`
+1. Select `APPLICATION_MODE=live` in the dashboard.
+2. Configure `APP_ENV=production` outside the database.
+3. Set `ORDER_EXECUTION_ENABLED=true` in the trusted environment/secrets
+   configuration; it is never dashboard-editable.
 
 This is deliberate: the system assumes paper trading unless you
 *unambiguously* say otherwise. Before touching any of these:
@@ -311,20 +268,20 @@ This is deliberate: the system assumes paper trading unless you
   [Safety Mechanisms & Roadmap](safety-and-limitations.md)). You are
   responsible for monitoring and manually closing any live position.
 
-Set all three values (see "How to change settings" below), then run the
-live application the same way you would in paper mode —
-`python -m trading_system.main` starts the full application, though note
-that a specific strategy/instrument still needs to be wired in to
-actually trade (see [Safety Mechanisms & Roadmap](safety-and-limitations.md#what-remains-to-be-implemented)
-for the current state of this).
+With live mode selected but the trusted execution gate disabled, the
+runtime is monitor-only and does not submit orders. With all independent
+gates enabled, the configured strategy and watchlists run through the
+live risk/reconciliation pipeline. Launch only with an explicit
+understanding of the remaining limitations and operational risks.
 
 ## How to change settings
 
 Configuration has distinct owners. AWS Secrets Manager
 (`victor/zerodha/kite`) supplies the allow-listed broker/Git credentials,
 PostgreSQL/Redis connection values, and dashboard admin token.
-PostgreSQL dashboard settings supply watchlists, trading mode, risk
-controls, and scoring weights/thresholds; saved rows override
+PostgreSQL dashboard settings supply application mode, strategy,
+watchlists, paper/backtest parameters, risk controls, and scoring
+weights/thresholds; saved rows override
 corresponding local settings when present. `.env` supplies bootstrap and
 local/runtime values such as AWS region/secret name, app environment,
 and log level.
@@ -346,7 +303,7 @@ stored in PostgreSQL.
 | Avoid the volatile first/last few minutes of the session | `RISK_AVOID_FIRST_MINUTES_OF_SESSION` / `RISK_AVOID_LAST_MINUTES_OF_SESSION` | `15` |
 | Choose which indices/stocks to trade as options | `OPTIONS_WATCHLIST` | Select underlying EQ instruments in the dashboard; persisted as token IDs |
 | Choose which stocks to trade directly (no options) | `EQUITY_WATCHLIST` | Select tradable cash EQ instruments in the dashboard; persisted as token IDs |
-| Switch between simulated and real orders | `TRADING_MODE` | `paper` or `live` |
+| Select backtest, paper, or live runtime | `APPLICATION_MODE` | `backtest`, `paper`, or `live` |
 | See more detail in the logs | `LOG_LEVEL` | `DEBUG` |
 
 The full list of every available setting, with a plain description of

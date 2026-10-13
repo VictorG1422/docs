@@ -2,18 +2,21 @@
 
 ## Safety mechanisms
 
-- **Paper trading is the default** (`TRADING_MODE=paper`, applied even
-  when the variable is unset); switching to live trading requires an
-  explicit environment variable plus valid Kite credentials, enforced by
-  `pydantic` validators that raise `ConfigurationError` otherwise.
-- **Unsupported trading modes fail fast**: any `TRADING_MODE` value other
-  than `paper`/`live` (e.g. `production`) raises `ConfigurationError`
-  before the application starts, instead of silently falling through.
-- **No trading logic runs yet**: Phase 1's `Application` never connects
-  to a broker or places an order; the previously-built `PlaceholderStrategy`
-  always returns `HOLD`/`None`, and `RiskManager.validate_signal()`
-  explicitly rejects `HOLD` signals, so no orders can be generated until
-  a real strategy and Phase 2 wiring exist.
+- **One configured workflow runs per process**: PostgreSQL
+  `APPLICATION_MODE` selects `backtest`, `paper` (the default), or `live`.
+  Unsupported values are rejected instead of silently falling through.
+- **Paper and backtest execution are simulated**: they can consume real
+  market/historical data but never submit real broker orders.
+- **Live orders require independent safeguards**: the DB-selected
+  `APPLICATION_MODE=live` is not an authorization by itself. Real
+  submission additionally requires valid Kite credentials,
+  `APP_ENV=production`, and the trusted environment-only
+  `ORDER_EXECUTION_ENABLED=true` gate. With that gate off, the live
+  runtime is monitor-only.
+- **The dashboard remains available when saved runtime settings are
+  invalid**: the selected trading workflow is withheld and the error is
+  exposed at `GET /api/runtime` so an authorized operator can correct the
+  settings and restart.
 - **Duplicate-order protection**: `OrderManager` tracks submitted signal
   IDs and raises `DuplicateOrderError` on re-submission; `RiskManager`
   independently tracks seen signal IDs per trading day.
@@ -23,12 +26,10 @@
   midnight via `_roll_daily_state_if_needed`.
 - **Emergency kill switch**: `RiskManager.emergency_shutdown()` blocks
   all further signals until explicitly reset.
-- **Fail-fast startup**: a `ConfigurationError` while loading settings
-  (invalid `TRADING_MODE`, missing live-trading credentials, etc.) is
-  logged safely (no secrets) and returns exit code `1` before the
-  application ever starts; `main()` always calls `Application.stop()` in
-  a `finally` block, and `SIGINT`/`SIGTERM` trigger the same clean
-  shutdown path instead of an abrupt process kill.
+- **Fail-safe startup**: invalid persisted runtime configuration does not
+  start a trading workflow. The unified launcher still serves the
+  dashboard where possible, and Uvicorn owns graceful shutdown of the
+  shared application lifecycle.
 - **No secrets in logs**: `JsonFormatter` redacts known credential field
   names even if they end up in `extra=` fields; `ConfigurationError`
   messages only ever mention variable names, never values.
@@ -48,17 +49,12 @@
 
 ## What remains to be implemented
 
-Phases 1-11 cover configuration, logging, the application lifecycle,
-health checks (PostgreSQL + Redis + Kite + instrument data), the
-PostgreSQL persistence schema/repository layer, the Redis state/cache/
-lock layer, the Kite broker/instrument-sync/tick-pipeline foundation,
-the instrument-discovery/option-chain foundation, the candle-
-aggregation/historical-data/technical-indicator foundation, the
-strategy/signal-generation framework (with a placeholder strategy, since
-no real strategy specification exists yet), the risk-management/
-position-sizing framework, Phase 9 order execution (gated, disabled by
-default), Phase 10 broker reconciliation, and Phase 11
-backtesting/paper trading. See the individual
+Phases 1-11 cover configuration, logging, the unified application
+lifecycle, health checks, PostgreSQL and Redis persistence/state,
+Kite integration, instrument synchronization, market data, strategy and
+risk pipelines, gated order execution, reconciliation, backtesting, and
+paper trading. The configurable generic `technical_scoring` strategy is
+not a claim of a strategy validated or approved for production. See the individual
 [phase write-ups](phases/phase-01-foundation.md) for full detail. Key
 open items:
 
@@ -72,14 +68,6 @@ open items:
   already implemented as a risk-engine-owned overlay -- see
   [Phase 8](phases/phase-08-risk-position.md) -- independent of whatever
   entry/exit rules this specification eventually defines.)
-- Deciding which NIFTY/BANK NIFTY instrument token(s) and timeframe(s) a
-  `StrategyEngine` should actually watch, and constructing/`start()`ing
-  one (or more) from `Application`/`main.py` -- `StrategyEngine` exists
-  and is fully tested but is deliberately not wired into `Application`
-  yet. The same is true for `RiskEngine` (Phase 8).
-- Wiring `TradingEngine` (or an equivalent) into `main.py`/`Application`
-  to actually run the `StrategyEngine -> RiskEngine -> OrderExecutionEngine
-  -> Broker` pipeline end-to-end.
 - Wiring the legacy `OrderManager`/`PositionManager` (the Phase 1
   placeholder pipeline) to actually persist via the repository layer and
   the Phase 3 Redis stores -- the schema/repositories/stores exist, but
@@ -87,9 +75,6 @@ open items:
 - Using `DistributedLock` around real order submission beyond strategy/
   risk evaluation scope -- the primitive exists but a broader
   order-placement-scoped use is not yet wired.
-- Calling `Application.sync_instruments()` on a schedule (or at startup)
-  so `UnderlyingDiscoveryService`/`ExpiryService`/`OptionChainService`
-  lookups always reflect the latest Kite instrument dump.
 - Deciding which interval(s)/instruments to back-fill via
   `MarketDataService.get_historical_data()` (Phase 6) at startup so
   indicators have a warm-up window before the first live candle
@@ -128,4 +113,5 @@ open items:
   environment checks. `RiskEngine._check_trading_window()`'s
   real-wall-clock IST check and Redis-TTL-based cooldown
   (`RiskPolicy.cooldown_seconds`) are not clock-injected for backtesting.
-  Paper sessions run in the foreground via `scripts/paper_trade.py`.
+  Paper sessions run as part of the unified `python -m trading_system.main`
+  process and are configured through PostgreSQL dashboard settings.

@@ -15,9 +15,8 @@ At the highest level, each trading process follows this sequence:
    agreed credential/infrastructure allow-list from AWS Secrets Manager.
    Watchlists, risk, and scoring settings remain database-managed.
 2. **Refresh instrument data** -- fetch NSE and NFO from Kite and upsert
-   both into PostgreSQL by instrument token. Main, paper, and backtest
-   processes stop before trading/backtest work if either exchange fails
-   to sync. Dashboard-only startup does not perform this refresh.
+   both into PostgreSQL by instrument token. The unified application
+   starts the selected workflow only after required synchronization.
 3. **Load trading settings and select instruments** -- use token IDs from
    database watchlists and resolve their names/metadata from the refreshed
    instrument master.
@@ -29,10 +28,11 @@ At the highest level, each trading process follows this sequence:
 6. **Shut down cleanly** -- on `Ctrl+C` or a termination signal, stop
    subscriptions, persist session state, and close resources.
 
-`TRADING_MODE=paper` is the default, but a paper session still requires
-explicit strategy and instrument selection through the paper-session
-command. Live order execution is a separate opt-in gate; starting the
-application does not by itself authorize real orders.
+`APPLICATION_MODE=paper` is the default. Select strategy and instruments,
+and configure paper/backtest options, in the dashboard. The single
+`python -m trading_system.main` command starts both the dashboard and the
+database-selected workflow. Live order execution remains separately
+gated; selecting live mode alone never authorizes real orders.
 
 ### Signal source and traded instrument
 
@@ -148,7 +148,7 @@ with a 1.5x multiplier, 1.5x reward:risk target, NIFTY lot size 75.
 6. **The order is submitted.** In paper mode, `PaperExecutionAdapter`
    simulates an instant fill at ₹142.50 -- no real money moves, nothing
    reaches Kite. In live mode (only if `ORDER_EXECUTION_ENABLED=true`,
-   `APP_ENV=production`, and `TRADING_MODE=live` are *all* set), the same
+   `APP_ENV=production`, and `APPLICATION_MODE=live` are *all* set), the same
    `TradeIntent` would instead go to `KiteBrokerAdapter`, which places a
    real market order and records the broker's order ID.
 7. **The position opens.** `PositionManager` records a new open position:
@@ -218,11 +218,10 @@ never heard of at all, always requires a human to look at it -- see
 
 ## 6. Worked example: running a backtest
 
-```powershell
-python scripts/backtest.py --strategy technical_scoring `
-  --instrument-token 256265 260105 --start 2026-01-01 --end 2026-03-31 `
-  --initial-capital 100000
-```
+Configure `APPLICATION_MODE=backtest`, strategy, watchlist, instrument
+mode, dates, interval, and initial capital in the dashboard, then start
+`python -m trading_system.main`. The historical run executes once in the
+background while the dashboard remains available.
 
 What happens when this runs:
 

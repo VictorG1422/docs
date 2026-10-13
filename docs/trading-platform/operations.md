@@ -1,68 +1,36 @@
 # Operations
 
-## Running in paper mode
+## Running the unified application
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m trading_system.main
 ```
 
-What happens when you run this:
+`python -m trading_system.main` is the only application entry point. It
+loads secrets and infrastructure settings, applies validated runtime
+settings from PostgreSQL, synchronizes required instruments, starts the
+FastAPI dashboard, and runs exactly one configured mode: backtest, paper,
+or live. The backtest runs once in a managed background thread; the
+dashboard/API remains available throughout. Paper and live runtimes share
+the same broker, database, Redis, and market-data pipeline with the API.
+There are no mode, strategy, instrument, date, host, or port command-line
+arguments; runtime values are set in the dashboard and server host/port
+come from normal environment/secrets configuration.
 
-1. `get_settings()` loads and validates configuration from `.env`
-   (falling back to safe defaults, `TRADING_MODE=paper` among them). A
-   `ConfigurationError` here (e.g. an invalid `TRADING_MODE`) is caught
-   before logging is configured, logged safely via `logging.basicConfig`,
-   and returns exit code `1`.
-2. `configure_logging()` installs structured JSON logging to stdout and
-   a rotating file under `logs/`.
-3. `SIGINT`/`SIGTERM` handlers are installed so the process can shut down
-   cleanly instead of crashing.
-4. `Application.start()` logs the loaded configuration and trading mode,
-   then marks the application running (`"Application started
-   successfully"`).
-5. The application logs a health check result and then blocks, waiting
-   for `Ctrl+C` or `SIGTERM`.
-6. On shutdown (or any `TradingSystemError` during startup),
-   `Application.stop()` always runs in a `finally` block and logs
-   `"Application shutdown"`.
-
-This intentionally does not connect to Kite, and does not subscribe to
-any market data or place any order. As of Phase 4, step 5's health check
-does attempt real PostgreSQL, Redis, and Kite connections (reporting
-`postgresql: false`/`redis: false`/`kite: false` rather than crashing if
-any is unreachable) -- see
-[Safety Mechanisms & Roadmap](safety-and-limitations.md#what-remains-to-be-implemented)
-for what later phases add on top of this foundation.
-
-## Running the dashboard
-
-```powershell
-python scripts/run_dashboard.py
-```
-
-Serves the dashboard at `http://127.0.0.1:8000/` -- the page itself is
-server-rendered in Python (Jinja2, `frontend/templates/`),
-with its CSS/jQuery served as static assets (`frontend/static/`) and
-backed by a small FastAPI JSON API (`src/trading_system/api/`) reading
-the same PostgreSQL database every other part of the application writes
-to. It displays trading records and scores and provides a token-protected
-settings editor; it cannot place orders or approve trades. Set
-`DASHBOARD_ADMIN_TOKEN` in the dashboard process environment to enable
-editing. Saved settings are audited in PostgreSQL and apply to trading
-processes after restart. See the
-[How-To Guide](how-to.md#how-to-view-the-dashboard) for what each section
-shows, and the "Dashboard addendum" section of
-[Phase 11](phases/phase-11-backtesting-paper.md) for the full design
-write-up. Supports `--host`, `--port`, and `--reload` (development only).
+An invalid persisted runtime configuration is logged and exposed at
+`GET /api/runtime`; the dashboard remains available and the configured
+trading workflow does not start. Use the protected settings editor to
+correct it, then restart the process. The dashboard itself is served at
+`http://127.0.0.1:8000/` by default. `scripts/run_dashboard.py` is a
+compatibility shim to the same unified entry point, not a dashboard-only
+server.
 
 If saving an options watchlist returns HTTP 422 with a missing CE/PE
-contracts message, check that NSE and NFO instrument data is synchronized
-using `python scripts/download_instruments.py`, and confirm the database
-has both option types at a common eligible expiry. The rejected save
-leaves the previous watchlist setting unchanged. Restart the dashboard
-process after deploying backend changes; an existing server does not
-reload application code unless started with development `--reload`.
+contracts message, synchronize NSE and NFO instrument data with
+`python scripts/download_instruments.py` and confirm both option types
+exist at a common eligible expiry. A rejected save leaves the previous
+setting unchanged.
 
 ## Running with Docker
 
@@ -72,10 +40,11 @@ docker run --rm --env-file .env algo-trading
 ```
 
 The Dockerfile installs `requirements.txt`, then installs
-the package itself (`pip install -e .`), and hardcodes
-`ENV TRADING_MODE=paper` as a safe default that an operator must
-deliberately override (e.g. `docker run -e TRADING_MODE=live ...`) to
-enable live trading. The container's entrypoint is
+the package itself (`pip install -e .`). `APPLICATION_MODE` defaults to
+paper in PostgreSQL; the mode is changed through the protected dashboard.
+Live order submission additionally requires the independently trusted
+`ORDER_EXECUTION_ENABLED=true`, `APP_ENV=production`, and valid Kite
+credentials. The container's entrypoint is
 `python -m trading_system.main`. PostgreSQL/Redis are expected to run as
 separate services (e.g. via `docker-compose` or managed instances) --
 point `POSTGRES_HOST`/`REDIS_HOST` at them via the env file.
@@ -186,7 +155,7 @@ print(client.health_check())  # True if Redis is reachable
 ```
 
 `Application.health()` also reports `redis: true/false` once the app is
-running (see [Running in paper mode](#running-in-paper-mode)).
+running (see [Running the unified application](#running-the-unified-application)).
 
 ## Redis responsibilities
 

@@ -17,15 +17,24 @@
   invalid**: the selected trading workflow is withheld and the error is
   exposed at `GET /api/runtime` so an authorized operator can correct the
   settings and restart.
-- **Duplicate-order protection**: `OrderManager` tracks submitted signal
-  IDs and raises `DuplicateOrderError` on re-submission; `RiskManager`
-  independently tracks seen signal IDs per trading day.
+- **Duplicate-entry protection**: the configured strategy/risk path
+  deduplicates repeated signal IDs. An open EQ position blocks another EQ
+  entry; distinct signals may create separate index CE/PE lots in the same
+  contract. Each lot has its own stop/target and exit identity.
 - **Risk limits with safe defaults**: `RiskLimits` defaults to a small
   `max_daily_loss` (5,000), `max_position_size` (1), and
   `max_trades_per_day` (10); daily counters reset automatically at
   midnight via `_roll_daily_state_if_needed`.
-- **Emergency kill switch**: `RiskManager.emergency_shutdown()` blocks
-  all further signals until explicitly reset.
+- **Immediate order-entry pause**: the dashboard's Redis-backed control
+  blocks new entries in configured backtest, paper, and live runtimes. The
+  execution engine rechecks the control immediately before submission;
+  inability to read control state fails closed for entries. Protective and
+  manual exits are not blocked. This pauses new entries, it does not cancel
+  orders already submitted or liquidate open positions.
+- **Manual exits are explicit and auditable**: authorized dashboard
+  operators can select one or more open paper/live position lots. Each
+  submitted exit records `MANUAL_EXIT` and the targeted position ID.
+  Backtest results are not live positions and cannot be manually exited.
 - **Fail-safe startup**: invalid persisted runtime configuration does not
   start a trading workflow. The unified launcher still serves the
   dashboard where possible, and Uvicorn owns graceful shutdown of the
@@ -53,25 +62,20 @@ Phases 1-11 cover configuration, logging, the unified application
 lifecycle, health checks, PostgreSQL and Redis persistence/state,
 Kite integration, instrument synchronization, market data, strategy and
 risk pipelines, gated order execution, reconciliation, backtesting, and
-paper trading. The configurable generic `technical_scoring` strategy is
-not a claim of a strategy validated or approved for production. See the individual
-[phase write-ups](phases/phase-01-foundation.md) for full detail. Key
-open items:
+paper trading. The configured runtime selects either `technical_scoring`
+(multi-timeframe confluence scoring) or `no_op` (no signals). The existence
+of `technical_scoring`, its configuration, or passing tests does not mean
+it has been validated or approved for production. See the individual
+[phase write-ups](phases/phase-01-foundation.md) for historical design
+detail. Key open items:
 
-- **The actual trading strategy itself.** `NoOpStrategy` never returns a
-  decision -- a real `BaseStrategy` implementation (entry/exit rules,
-  indicator thresholds, option-selection rules) requires an actual
-  strategy specification, which does not exist anywhere in this project
-  (see [Phase 7](phases/phase-07-strategy-signal.md)). Complete
-  [the strategy specification](strategy-specification.md) (added in the
-  Phase 7A follow-up) to unblock this. (Phase 8's stop-loss/target are
-  already implemented as a risk-engine-owned overlay -- see
-  [Phase 8](phases/phase-08-risk-position.md) -- independent of whatever
-  entry/exit rules this specification eventually defines.)
-- Wiring the legacy `OrderManager`/`PositionManager` (the Phase 1
-  placeholder pipeline) to actually persist via the repository layer and
-  the Phase 3 Redis stores -- the schema/repositories/stores exist, but
-  nothing calls them yet.
+- **Strategy validation and production approval.** The configured
+  `technical_scoring` algorithm is implemented, but its thresholds and
+  resulting performance require independent market, paper, and operational
+  validation before any production use. See
+  [Strategy Specification](strategy-specification.md) and
+  [Phase 7](phases/phase-07-strategy-signal.md). `NoOpStrategy` remains
+  available when signal generation should be disabled.
 - Using `DistributedLock` around real order submission beyond strategy/
   risk evaluation scope -- the primitive exists but a broader
   order-placement-scoped use is not yet wired.
@@ -82,14 +86,13 @@ open items:
 - End-of-day/session finalization for the last "forming" candle of a
   trading session (Phase 6's `CandleAggregator` only completes a candle
   when the *next* bucket's first tick arrives).
-- **Phase 10 broker reconciliation boundary**: real broker capital/margin --
-  `AccountState.available_capital`/`used_capital`/`available_margin` are
-  always `None` (Phase 8/10 never fabricate them; Phase 10 reconciles
-  orders/positions, not margin/capital). `Position`/`OrderManager`
-  in-memory objects (the Phase 1 placeholder pipeline) are still
-  separate from the persisted `storage.db.models.Position`/`Order` rows
-  Phase 10 reconciles -- wiring the placeholder pipeline itself into
-  `TradingEngine` remains open.
+- **Broker capital/margin**: `AccountState.available_capital`/
+  `used_capital`/`available_margin` remain `None`; reconciliation compares
+  orders and net positions, not broker capital or margin. Live per-entry
+  position lots are persisted locally and checked in aggregate against the
+  broker's net per-instrument exposure. Discrepancies that cannot be safely
+  attributed require manual action; reconciliation never submits corrective
+  orders.
 - NSE holiday calendar sourced from PostgreSQL/a periodic sync job
   instead of the static fallback list in `utils/time_utils.py`.
 - Option-chain/tick/candle/signal snapshotting to S3.

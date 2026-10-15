@@ -60,16 +60,33 @@ beyond the most liquid names.
     section covers the *design decisions* behind that pipeline instead of
     repeating the steps.
 
-**Two pipelines exist in this codebase, and only one of them matters in
-practice.** Phase 1 shipped an early placeholder pipeline (`Strategy` ABC
-→ `RiskManager` → `OrderManager`) to prove the application's lifecycle
-worked before any real logic existed. Phase 7 onward replaced it with the
-real, fully tested pipeline (`BaseStrategy` → `StrategyEngine` →
-`RiskEngine` → `OrderExecutionEngine`) described in
-[Flow & Worked Examples](flow-and-examples.md) -- that is the one every
-current phase builds on. The Phase 1 placeholder still exists for
-backward compatibility and is paper-only; nothing new should be built
-against it.
+**The configured application runtime is the canonical trading path.**
+`Application` selects one database-configured mode and wires a `BaseStrategy`
+through `StrategyEngine`, `RiskEngine`, and `OrderExecutionEngine`. The
+strategy engine emits validated, persisted signals; the runtime hands those
+signals to risk and execution. The old Phase 1 `Strategy`/`RiskManager`/
+`OrderManager` objects remain in the repository as legacy components; they
+are not the configured paper/live/backtest pipeline.
+
+The current selectable strategy is `technical_scoring`: a configurable
+multi-timeframe pattern/indicator confluence scorer. `no_op` is also
+selectable for deliberately disabling signals. Neither the implementation
+nor a passing test suite is a claim that a trading strategy is approved for
+production; see [Safety Mechanisms & Roadmap](safety-and-limitations.md).
+
+The dashboard's Redis-backed order-entry switch is shared by configured
+backtest, paper, and live execution. Pausing blocks entry signals/orders at
+both runtime and final execution checks. Protective exits and
+dashboard-admin-authenticated manual exits remain available. Live
+submission still requires the separate environment, mode, credential, and
+`ORDER_EXECUTION_ENABLED` safeguards.
+
+Risk-approved index CE/PE entries with distinct signals can create separate
+entry lots for one contract; same-signal repeats remain deduplicated and
+open EQ duplicates remain blocked. Live lots are persisted separately and
+reconciled against the broker's net instrument exposure. Paper/backtest
+portfolios also keep per-entry lots, so each lot retains its own protective
+levels and manual-exit selector.
 
 Key design decisions behind the real pipeline:
 

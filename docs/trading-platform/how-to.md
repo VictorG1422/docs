@@ -359,11 +359,21 @@ far more detail while diagnosing something.
 
 **Why did my backtest only open one trade all week, even though I saw
 many signals in the log?**
-Every signal after the first one got rejected as a duplicate position —
-the system doesn't yet have a way to close a position automatically, so
-once one is open, nothing else can be opened for that same instrument
-until you add an exit mechanism. This is expected, documented behavior,
-not a bug — see [Safety Mechanisms & Roadmap](safety-and-limitations.md).
+Check the recorded risk decisions and exits. Repeated signal IDs are
+deduplicated. An open EQ position blocks another entry for that EQ, but
+distinct signals can open separate index CE/PE lots in the same contract.
+Configured paper/backtest positions are also evaluated for protective
+stop-loss/target exits; each entry lot keeps its own levels.
+
+**How do I stop new orders without closing open positions?**
+Use the dashboard's **Pause new entries** control. The pause applies to
+configured backtest, paper, and live workflows. It blocks new entries, not
+protective exits or already-submitted orders; it does not liquidate positions.
+
+**How do I manually exit one or more open positions?**
+Select open paper/live position lots in the dashboard and submit the manual
+exit. Each selected lot receives its own audited exit with reason
+`MANUAL_EXIT`. Manual exits are not available for completed backtest results.
 
 **My backtest/paper session shows a profit or loss, but "total trades"
 is zero — is that a bug?**

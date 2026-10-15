@@ -22,9 +22,11 @@ At the highest level, each trading process follows this sequence:
    instrument master.
 4. **Watch and analyze the market** -- receive ticks for the signal
    instrument and build candles for the configured strategy/timeframes.
-5. **Check risk and trade** -- approved signals proceed to order handling:
-   paper mode simulates fills; real broker submission remains separately
-   gated by live execution settings.
+5. **Check controls, risk, and trade** -- the shared order-entry pause is
+   checked before signal evaluation and again at the execution boundary.
+   Approved entries proceed to simulated fills in backtest/paper or separately
+   gated broker submission in live mode. Protective and manual exits remain
+   available while entries are paused.
 6. **Shut down cleanly** -- on `Ctrl+C` or a termination signal, stop
    subscriptions, persist session state, and close resources.
 
@@ -53,6 +55,12 @@ The dashboard displays instrument labels for people, but PostgreSQL stores
 the underlying token IDs. AWS Secrets Manager does not override these
 database-managed watchlists or score settings.
 
+The dashboard's **Pause new entries** control applies to configured backtest,
+paper, and live execution. It does not liquidate positions or block exits.
+Operators can select one or more open paper/live position lots for a manual
+exit; each exit is audited with reason `MANUAL_EXIT`. Backtest results are
+historical and cannot be manually exited.
+
 ## 2. The trading pipeline, stage by stage
 
 This is the path a single price update takes, from the exchange to a
@@ -65,13 +73,15 @@ flowchart TD
     B --> D[CandleAggregator: build 1m / 5m / 15m candles]
     D -->|candle closes| E[StrategyEngine: ask the strategy a question]
     E -->|BUY or SELL| F[RiskEngine: is this trade allowed?]
-    F -->|approved: TradeIntent| G[OrderExecutionEngine: send the order]
-    G --> H{TRADING_MODE}
-    H -->|paper, default| I[Simulated fill, no real money]
-    H -->|live, gated| J[Real Kite order]
-    I --> K[PositionManager: track open positions]
-    J --> K
-    K --> L[ReconciliationEngine: periodically double-check against the broker]
+    F -->|approved: TradeIntent| G[OrderExecutionEngine: final entry-pause and execution gates]
+    G --> H{APPLICATION_MODE}
+    H -->|backtest| I[BacktestExecutionAdapter: simulated next-candle fills]
+    H -->|paper| J[PaperExecutionAdapter: simulated market-price fills]
+    H -->|live + independent safeguards| K[KiteBrokerAdapter: broker order]
+    I --> L[Portfolio: per-entry lots]
+    J --> M[Portfolio: per-entry lots]
+    K --> N[PostgreSQL position lots]
+    N --> O[ReconciliationEngine: compare lots with broker net exposure]
 ```
 
 In plain words, stage by stage:
@@ -84,11 +94,11 @@ In plain words, stage by stage:
 | 4 | Build candles | Ticks are grouped into fixed time buckets (e.g. every 5 minutes) to form OHLC candles. | `market_data/candle_aggregator.py::CandleAggregator` |
 | 5 | Ask the strategy | The moment a candle closes, the configured strategy looks at recent candles and indicators and decides: buy, sell, or do nothing. | `strategy/strategy_engine.py::StrategyEngine` |
 | 6 | Pick the option contract | If the strategy trades options, the underlying's BUY/SELL view is translated into a specific CE/PE contract (e.g. "buy the at-the-money call"). | `strategy/option_selector.py::OptionSelector` |
-| 7 | Check the risk | Every proposed trade is checked against daily loss limits, position limits, trading hours, duplicate positions, and more -- before anything is sized. | `risk/risk_engine.py::RiskEngine` |
+| 7 | Check the risk | Every proposed trade is checked against configured limits and duplicate rules before anything is sized. Same-signal repeats are deduplicated; distinct index CE/PE signals may add separate lots, while an open EQ position blocks another EQ entry. | `risk/risk_engine.py::RiskEngine` |
 | 8 | Size the trade | If approved, the exact quantity (in whole lots) is calculated from your risk budget and the stop-loss distance. | `risk/position_sizer.py::PositionSizer` |
-| 9 | Send the order | The sized, approved trade is submitted to the broker -- or, in paper mode, simulated instantly. | `execution/order_execution_engine.py::OrderExecutionEngine` |
-| 10 | Track the position | A filled order becomes (or updates) an open position, tracked until it's closed. | `execution/position_manager.py::PositionManager` |
-| 11 | Double-check later | Separately from all of the above, a reconciliation job periodically compares what the broker actually shows against what PostgreSQL/Redis believe, and flags any mismatch. | `reconciliation/engine.py::ReconciliationEngine` |
+| 9 | Send the order | The execution engine rechecks the shared entry pause; mode-specific adapters simulate fills in backtest/paper, while live submission requires independent safeguards. | `execution/order_execution_engine.py::OrderExecutionEngine` |
+| 10 | Track the position | Backtest/paper portfolios retain one lot per entry; live PostgreSQL lots retain entry linkage and individual protective levels. | `backtest/portfolio.py::Portfolio`, `execution/live_trading_runtime.py::LiveTradingRuntime` |
+| 11 | Double-check later | Reconciliation compares persisted live lots with the broker's net per-instrument exposure and flags unsafe mismatches for manual action. | `reconciliation/position_reconciler.py::PositionReconciler` |
 
 A few rules hold true at every single stage above, and are worth
 remembering before reading the worked examples:
@@ -151,14 +161,21 @@ with a 1.5x multiplier, 1.5x reward:risk target, NIFTY lot size 75.
    `APP_ENV=production`, and `APPLICATION_MODE=live` are *all* set), the same
    `TradeIntent` would instead go to `KiteBrokerAdapter`, which places a
    real market order and records the broker's order ID.
-7. **The position opens.** `PositionManager` records a new open position:
-   75 units of `NIFTY-25DEC-22150-CE`, entry ₹142.50.
+7. **The position opens.** The configured runtime records an entry-linked
+   lot: 75 units of `NIFTY-25DEC-22150-CE`, entry ₹142.50. Distinct,
+   separately deduplicated index signals may create additional lots in the
+   same contract; each lot retains its own stop, target, and exit identity.
 8. **What happens next?** The live runtime monitors ticks for this
    broker-confirmed position and submits a protective exit through the
    Phase 9 execution gate when its stop-loss or target is reached. On a
    disconnected/stale tick feed it cannot react until market data resumes.
    In paper/backtest mode the corresponding simulated position is checked
    against the traded instrument's candle prices; no real order is placed.
+
+To stop new entries, an operator can pause them in the dashboard without
+closing this position. A paper/live operator can then choose this lot and
+submit a manual exit; its persisted intent records `MANUAL_EXIT`. Selecting
+multiple lots creates individually auditable exits.
 
 ## 4. Worked example: a trade that gets rejected
 
@@ -237,7 +254,9 @@ What happens when this runs:
    order" step goes to a simulated adapter instead of Kite, and a
    signal can only ever fill using a *later* candle's price (never the
    candle that generated it, which would be cheating).
-4. The two instruments share one virtual portfolio and starting capital.
+4. The replay checks the shared order-entry pause as well as the execution
+boundary; pausing skips new entries but leaves simulated protective exits
+active. The two instruments share one virtual portfolio and starting capital.
    At the end of the run, a single `BacktestResult` is produced: for example,
    *42 trades, 58% win rate, profit factor 1.7, max drawdown 6.2%* --
    and a summary row is saved to the real database's `backtest_runs` /

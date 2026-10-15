@@ -32,6 +32,19 @@ contracts message, synchronize NSE and NFO instrument data with
 exist at a common eligible expiry. A rejected save leaves the previous
 setting unchanged.
 
+Paper-mode restarts preserve completed session records under
+`archived:<session UUID>` and create a fresh record for the configured
+strategy/instrument/timeframe key. A record still marked `RUNNING` blocks
+another session; do not delete historical rows to resolve a restart error.
+
+WebSocket startup is visible at INFO level: `KITE_WS_CONNECT_ATTEMPT`,
+`KITE_WS_CONNECTED`, `KITE_WS_SUBSCRIBE_ATTEMPT`, then
+`KITE_SUBSCRIPTION_UPDATED`. The subscription update confirms the client
+sent the commands, not a broker acknowledgement; a received tick verifies
+delivery. `KITE_CONNECTED` alone confirms REST authentication only. A
+paper-session startup failure occurs before WebSocket subscription, so
+DEBUG mode does not produce a connection attempt in that case.
+
 ## Running with Docker
 
 ```powershell

@@ -149,6 +149,8 @@ loaded in the page; limited or paginated tables do not fetch extra records.
   shows macro/flow gate outcomes and reasons, pivot context, and every
   component value. OPTIONS fills use the next bar's open with 0.75%
   adverse premium slippage; EQUITY fills retain zero slippage by default.
+  The completed-trades table includes each trade's final signal score for
+  comparison with its realized result.
   With the dashboard admin token, delete a terminal run to remove its
   summary, trades, and local audit database; pending/running runs cannot be deleted.
 - **Trading & risk settings** (`/risk-settings`) — application mode,

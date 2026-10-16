@@ -341,4 +341,22 @@ non-reentrant lock. Fixed by switching to `threading.RLock()`; Phase 6's
 own listener (persist/cache) never made this callback, so the bug was
 latent until Phase 7 exercised it.
 
+## Addendum — Daily Pivot Context
+
+The configured `technical_scoring` path can include one `pivot_context`
+contribution based on the previous completed 1440-minute candle for the
+signal instrument. It calculates `P`, `BC`/`TC`, `R1`-`R3`, and `S1`-`S3`
+using IST session dates. Price above or below the CPR contributes bullish
+or bearish context; moving beyond R1/S1 increases the feature strength.
+Price inside the CPR is neutral. The default score weight is 8 and can be
+changed or set to zero through dashboard score settings.
+
+All levels and the source session date are included in the indicator
+snapshot and backtest audit. R2/R3/S2/S3 are recorded context, not
+automatic targets or exits. Live/paper runtimes warm daily history; a
+backtest loads daily warmup history and only uses a session whose IST date
+is strictly earlier than the signal date. If prior daily OHLC is missing
+or invalid, the pivot contribution is omitted. This generic context feature
+is configurable, not evidence of a validated trading strategy.
+
 See the original prompt: [specs/07-phase7.md](../specs/07-phase7.md).

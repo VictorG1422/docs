@@ -74,7 +74,7 @@ no AWS override for database-managed strategy or scoring values.
 | `S3_BUCKET_NAME` | *(empty)* | Bucket used for snapshots/archival storage. |
 | `AWS_SECRETS_NAME` | `victor/zerodha/kite` | AWS Secrets Manager secret containing only the allow-listed credentials and infrastructure settings. Read from `.env`/environment so the secret can be located. |
 | `DASHBOARD_ADMIN_TOKEN` | *(empty)* | AWS secret key for authorizing dashboard configuration writes; an empty value disables editing. |
-| `DASHBOARD_HOST` / `DASHBOARD_PORT` | `127.0.0.1` / `8000` | Environment/bootstrap settings for the unified dashboard/API listener. |
+| `DASHBOARD_HOST` / `DASHBOARD_PORT` | `127.0.0.1` / `8000` | Environment/bootstrap settings for the standalone dashboard/API listener (`python -m dashboard.main`). Set host to `0.0.0.0` inside a container. |
 | `APPLICATION_MODE` | `paper` | PostgreSQL dashboard setting selecting exactly one workflow: `backtest`, `paper`, or `live`. |
 | `STRATEGY_NAME` | `technical_scoring` | PostgreSQL dashboard setting selecting `technical_scoring` or `no_op`. |
 | `PAPER_INITIAL_CAPITAL` / `PAPER_CANDLE_INTERVAL_MINUTES` | `100000` / `5` | PostgreSQL dashboard settings for paper session capital and candle interval. |

@@ -153,23 +153,17 @@ trading_platform/
 │   │   ├── s3.py
 │   │   └── db/                   # Phase 2: ORM models, repositories
 │   ├── models/                  # Tick, Instrument, Signal, Order, Position
-│   ├── api/                      # Phase 11 addendum: dashboard and protected settings API
-│   │   ├── app.py                 # app factory, renders frontend/templates/, includes routers
-│   │   ├── dependencies.py        # Postgres/Redis/Kite singletons + DB session
-│   │   ├── serialization.py       # generic ORM row -> JSON dict
-│   │   ├── queries.py             # generic "list recent" + instrument enrichment
-│   │   └── routers/               # health, market, trading, risk, reconciliation, backtests
 │   ├── utils/                   # structured logging, market-time utilities
 │   └── exceptions/               # typed exception hierarchy
-├── frontend/                    # Phase 11 addendum: dashboard (Python/Jinja2 + jQuery)
-│   ├── templates/index.html      # server-rendered by trading_system.api.app
-│   └── static/
-│       ├── css/style.css
-│       └── js/app.js
+├── src/dashboard/                # standalone dashboard app and API
+│   ├── main.py                   # `python -m dashboard.main`
+│   ├── app.py                    # app factory, routes and page rendering
+│   ├── dependencies.py           # database/cache/broker API dependencies
+│   └── frontend/                 # Jinja templates and static CSS/JavaScript
 ├── scripts/
 │   ├── download_instruments.py
 │   ├── health_check.py
-│   └── run_dashboard.py          # compatibility shim to the unified entry point
+│   └── run_dashboard.py          # compatibility shim to dashboard.main
 ├── tests/
 │   ├── conftest.py
 │   ├── unit/

@@ -1,30 +1,38 @@
 # Operations
 
-## Running the unified application
+## Running the algorithm
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m trading_system.main
 ```
 
-`python -m trading_system.main` is the only application entry point. It
-loads secrets and infrastructure settings, applies validated runtime
-settings from PostgreSQL, synchronizes required instruments, starts the
-FastAPI dashboard, and runs exactly one configured mode: backtest, paper,
-or live. The backtest runs once in a managed background thread; the
-dashboard/API remains available throughout. Paper and live runtimes share
-the same broker, database, Redis, and market-data pipeline with the API.
-There are no mode, strategy, instrument, date, host, or port command-line
-arguments; runtime values are set in the dashboard and server host/port
-come from normal environment/secrets configuration.
+`python -m trading_system.main` starts only the configured algorithm. It
+loads secrets and validated PostgreSQL settings, synchronizes required
+instruments, then runs backtest, paper, or live mode. It does not start an
+HTTP server. Runtime values are managed in PostgreSQL; there are no mode,
+strategy, instrument, or date command-line arguments.
 
-An invalid persisted runtime configuration is logged and exposed at
-`GET /api/runtime`; the dashboard remains available and the configured
-trading workflow does not start. Use the protected settings editor to
-correct it, then restart the process. The dashboard itself is served at
-`http://127.0.0.1:8000/` by default. `scripts/run_dashboard.py` is a
-compatibility shim to the same unified entry point, not a dashboard-only
-server.
+## Running the dashboard separately
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m dashboard.main
+```
+
+The dashboard serves its UI and API at `http://127.0.0.1:8000/` by default.
+Run it in its own terminal or container; it reads the same PostgreSQL and
+Redis configuration as the algorithm and can run while the algorithm is
+stopped. Dashboard setting changes are saved to PostgreSQL and take effect
+when the algorithm next starts. `GET /api/runtime` reports that the runtime
+is managed separately; use Backtests, Paper Sessions, logs, and health
+checks for persisted status. The detached dashboard does not submit orders;
+manual position exits are unavailable there.
+
+`scripts/run_dashboard.py` is a compatibility shim for
+`python -m dashboard.main`. An invalid database runtime configuration stops
+the algorithm process while leaving the separately running dashboard
+available to correct it.
 
 If saving an options watchlist returns HTTP 422 with a missing CE/PE
 contracts message, synchronize NSE and NFO instrument data with
@@ -44,6 +52,47 @@ sent the commands, not a broker acknowledgement; a received tick verifies
 delivery. `KITE_CONNECTED` alone confirms REST authentication only. A
 paper-session startup failure occurs before WebSocket subscription, so
 DEBUG mode does not produce a connection attempt in that case.
+Kite Connect 5.x pins Autobahn 19.11.2; keep Twisted below 25.0 for
+compatibility. Twisted 26.4.0 produced repeated WebSocket 1006 closures,
+while 24.11.0 connected successfully in the same environment. Log
+timestamps are shown in IST (+05:30). Ctrl+C invokes application shutdown,
+unsubscribes tokens, dispatches the close call on Twisted's reactor thread,
+and waits briefly for the close callback before aborting the local transport
+if the peer does not complete the handshake.
+
+## Trading profiles
+
+The options watchlist uses the intraday profile: BUY signals select a CE,
+SELL signals select a PE, and open option positions are squared off at
+`OPTIONS_INTRADAY_SQUARE_OFF_TIME` (default `15:15` IST). The equity
+watchlist uses a long-only swing profile: daily candles, CNC delivery,
+ATR stop at `2.0x` with a `5%` fallback when ATR history is insufficient,
+and a target at `2R`. An equity SELL closes an existing long; it never
+opens a short. Swing positions are retained across paper-process restarts.
+
+The profile values are editable under Trading & risk settings and are
+stored in PostgreSQL. Run the migrations before starting this version;
+`0015` adds durable paper-session portfolio state and `0016` seeds these
+profile defaults without overwriting existing settings. A local stop is
+not a broker-held stop: gaps, stale/disconnected market data, rejected
+orders, and market halts can result in a worse exit or an unclosed
+position. Validate the strategy and operating procedures before any live
+use; tests do not constitute production approval.
+
+## Daily pivot context
+
+`technical_scoring` calculates classic pivots once from the previous
+completed 1440-minute session candle. It records `P`, `BC`/`TC`, `R1`-`R3`,
+`S1`-`S3`, CPR bounds/width, and the source session date in the signal
+snapshot. Price above/below the CPR contributes one bullish/bearish
+`pivot_context` score (default weight 8); crossing beyond R1/S1 increases
+that feature's strength. Price inside the CPR is neutral. R2/R3/S2/S3 are
+context only, not automatic targets or exits. Set
+`SCORING_WEIGHT_PIVOT_CONTEXT=0` in dashboard score settings to disable its
+score contribution. If prior daily history is unavailable or invalid, the
+feature is omitted and existing scoring continues. Backtests use only
+daily candles from earlier IST session dates; the same-day daily bar is
+never used to create that day's pivot levels.
 
 ## Running with Docker
 
@@ -57,9 +106,11 @@ the package itself (`pip install -e .`). `APPLICATION_MODE` defaults to
 paper in PostgreSQL; the mode is changed through the protected dashboard.
 Live order submission additionally requires the independently trusted
 `ORDER_EXECUTION_ENABLED=true`, `APP_ENV=production`, and valid Kite
-credentials. The container's entrypoint is
-`python -m trading_system.main`. PostgreSQL/Redis are expected to run as
-separate services (e.g. via `docker-compose` or managed instances) --
+credentials. The default container command runs only
+`python -m trading_system.main`. Run the dashboard in a separate container
+with `docker run --rm --env-file .env -e DASHBOARD_HOST=0.0.0.0 -p 8000:8000
+algo-trading python -m dashboard.main`. PostgreSQL/Redis are expected to
+run as separate services (e.g. via `docker-compose` or managed instances) --
 point `POSTGRES_HOST`/`REDIS_HOST` at them via the env file.
 
 ## PostgreSQL setup
@@ -123,6 +174,8 @@ intentionally **not** persisted to PostgreSQL.
 Migration `0012` updates the instrument lot-size check to allow zero only
 for `INDICES` reference rows; tradable instruments still require a positive
 lot size. Migration `0011` adds dashboard score, settings, and audit tables.
+Migration `0015` adds paper-session runtime state; `0016` idempotently seeds
+the options/equity profile settings while preserving existing values.
 
 ## Redis setup
 
@@ -168,7 +221,7 @@ print(client.health_check())  # True if Redis is reachable
 ```
 
 `Application.health()` also reports `redis: true/false` once the app is
-running (see [Running the unified application](#running-the-unified-application)).
+running (see [Running the algorithm](#running-the-algorithm)).
 
 ## Redis responsibilities
 

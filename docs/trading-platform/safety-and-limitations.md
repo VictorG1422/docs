@@ -35,10 +35,11 @@
   operators can select one or more open paper/live position lots. Each
   submitted exit records `MANUAL_EXIT` and the targeted position ID.
   Backtest results are not live positions and cannot be manually exited.
-- **Fail-safe startup**: invalid persisted runtime configuration does not
-  start a trading workflow. The unified launcher still serves the
-  dashboard where possible, and Uvicorn owns graceful shutdown of the
-  shared application lifecycle.
+- **Separate process boundary**: the dashboard serves reads and protected
+  database configuration updates; the algorithm owns subscriptions and
+  execution. The detached dashboard does not submit orders or perform
+  manual exits. Invalid persisted runtime configuration prevents the
+  algorithm from starting while the dashboard remains available to correct it.
 - **No secrets in logs**: `JsonFormatter` redacts known credential field
   names even if they end up in `extra=` fields; `ConfigurationError`
   messages only ever mention variable names, never values.
@@ -56,10 +57,19 @@
   wraps failures in `RedisUnavailableError` (logged via `Event.REDIS_ERROR`)
   instead of returning a default value or crashing the whole process.
 
+**Equity swing is long-only and locally protected.** The configured equity
+profile uses daily candles, CNC delivery, a `2x ATR` stop (5% fallback
+when there is insufficient ATR history), and a `2R` target. SELL signals
+close an existing long and never open short equity positions. The stop is
+not held at the broker: overnight gaps can pass through the stop, and a
+stale/disconnected feed, rejected exit, or market halt can delay or prevent
+the application-submitted exit. Options positions use the intraday
+profile and are scheduled for square-off at the configured IST cutoff.
+
 ## What remains to be implemented
 
-Phases 1-11 cover configuration, logging, the unified application
-lifecycle, health checks, PostgreSQL and Redis persistence/state,
+Phases 1-11 cover configuration, logging, the algorithm and dashboard
+process lifecycles, health checks, PostgreSQL and Redis persistence/state,
 Kite integration, instrument synchronization, market data, strategy and
 risk pipelines, gated order execution, reconciliation, backtesting, and
 paper trading. The configured runtime selects either `technical_scoring`
@@ -79,13 +89,6 @@ detail. Key open items:
 - Using `DistributedLock` around real order submission beyond strategy/
   risk evaluation scope -- the primitive exists but a broader
   order-placement-scoped use is not yet wired.
-- Deciding which interval(s)/instruments to back-fill via
-  `MarketDataService.get_historical_data()` (Phase 6) at startup so
-  indicators have a warm-up window before the first live candle
-  completes -- the retrieval path exists, but nothing calls it yet.
-- End-of-day/session finalization for the last "forming" candle of a
-  trading session (Phase 6's `CandleAggregator` only completes a candle
-  when the *next* bucket's first tick arrives).
 - **Broker capital/margin**: `AccountState.available_capital`/
   `used_capital`/`available_margin` remain `None`; reconciliation compares
   orders and net positions, not broker capital or margin. Live per-entry
@@ -116,5 +119,5 @@ detail. Key open items:
   environment checks. `RiskEngine._check_trading_window()`'s
   real-wall-clock IST check and Redis-TTL-based cooldown
   (`RiskPolicy.cooldown_seconds`) are not clock-injected for backtesting.
-  Paper sessions run as part of the unified `python -m trading_system.main`
-  process and are configured through PostgreSQL dashboard settings.
+  Paper sessions run in `python -m trading_system.main` and are configured
+  through PostgreSQL settings managed by the separate dashboard process.

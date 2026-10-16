@@ -15,8 +15,8 @@ At the highest level, each trading process follows this sequence:
    agreed credential/infrastructure allow-list from AWS Secrets Manager.
    Watchlists, risk, and scoring settings remain database-managed.
 2. **Refresh instrument data** -- fetch NSE and NFO from Kite and upsert
-   both into PostgreSQL by instrument token. The unified application
-   starts the selected workflow only after required synchronization.
+   both into PostgreSQL by instrument token. The algorithm process starts
+   the selected workflow only after required synchronization.
 3. **Load trading settings and select instruments** -- use token IDs from
    database watchlists and resolve their names/metadata from the refreshed
    instrument master.
@@ -25,16 +25,18 @@ At the highest level, each trading process follows this sequence:
 5. **Check controls, risk, and trade** -- the shared order-entry pause is
    checked before signal evaluation and again at the execution boundary.
    Approved entries proceed to simulated fills in backtest/paper or separately
-   gated broker submission in live mode. Protective and manual exits remain
-   available while entries are paused.
+   gated broker submission in live mode. Protective exits bypass the pause;
+   manual exits require an in-process runtime and are unavailable from the
+   detached dashboard.
 6. **Shut down cleanly** -- on `Ctrl+C` or a termination signal, stop
    subscriptions, persist session state, and close resources.
 
-`APPLICATION_MODE=paper` is the default. Select strategy and instruments,
-and configure paper/backtest options, in the dashboard. The single
-`python -m trading_system.main` command starts both the dashboard and the
-database-selected workflow. Live order execution remains separately
-gated; selecting live mode alone never authorizes real orders.
+`APPLICATION_MODE=paper` is the default. Start `python -m dashboard.main`
+for the dashboard and `python -m trading_system.main` separately for the
+database-selected workflow. Both use the shared PostgreSQL configuration.
+The detached dashboard does not submit orders or perform manual exits.
+Live order execution remains separately gated; selecting live mode alone
+never authorizes real orders.
 
 ### Signal source and traded instrument
 

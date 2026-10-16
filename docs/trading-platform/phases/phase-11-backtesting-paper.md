@@ -131,6 +131,19 @@ threshold crossings but deliberately submits no orders. A lost/stale
 market-data feed cannot provide tick-triggered live protection, so feed
 health must be monitored.
 
+**Separate options and equity profiles:** options remain intraday: bullish
+signals buy CE, bearish signals buy PE, and open CE/PE positions are
+scheduled for square-off at the configured IST cutoff (default `15:15`).
+Equity watchlist entries use daily candles and CNC delivery. They are
+long-only: an equity SELL closes an existing long and is ignored when no
+long exists. The default swing protection is a `2x ATR` stop, a `5%`
+fallback when history is insufficient, and a `2R` target. Paper equity
+portfolio state is serialized in `paper_sessions` and restored after a
+process restart; live positions remain durable in PostgreSQL. Local stops
+are not broker-held orders, so price gaps and feed/order failures can exceed
+the nominal stop. This profile is configurable, not a claim of strategy
+validation or production approval.
+
 **Paper-session management (`backtest/paper.py`):** `PaperTradingSession`
 is keyed by `strategy_name:instrument_token:timeframe`; `start()` rejects
 a second concurrent `RUNNING` session for the same key
@@ -158,8 +171,9 @@ from the synchronized instrument master. A run fails if any requested
 underlying has no historical candles. No web framework was added.
 
 **Persistence/migration:** `0010_backtest_paper` adds `backtest_runs`,
-`backtest_trades`, `paper_sessions`. Apply `alembic upgrade head` before
-using Phase 11.
+`backtest_trades`, `paper_sessions`; `0015` adds restartable paper runtime
+state and `0016` seeds the profile settings without overwriting existing
+values. Apply `alembic upgrade head` before using these profile changes.
 
 **Tests and boundary:** `test_backtest_portfolio.py` (9, hand-computed
 accounting examples), `test_backtest_metrics.py` (9, zero-trade/zero-loss/
@@ -212,20 +226,20 @@ phase (see `specs/08-phase8.md`/`specs/09-phase9.md`/`specs/10-phase10.md`).
 
 ```text
 Browser
-  -> GET / (server-rendered HTML, trading_system/api/app.py + Jinja2,
-            frontend/templates/index.html)
-  -> GET /static/... (CSS + jQuery, frontend/static/)
-  -> GET /api/... (FastAPI JSON endpoints, trading_system/api/routers/)
+  -> GET / (server-rendered HTML, dashboard/app.py + Jinja2,
+            dashboard/frontend/templates/index.html)
+  -> GET /static/... (CSS + jQuery, dashboard/frontend/static/)
+  -> GET /api/... (FastAPI JSON endpoints, dashboard/routers/)
   -> the SAME PostgreSQL database every other phase already writes to
 ```
 
 **Why this shape:**
 
-- **Trading actions remain out of scope.** The dashboard has no code path
-  into `OrderExecutionEngine`, `RiskEngine`, or broker order calls. Its
-  only write route is a token-protected settings update; settings are
-  allow-listed, validated, persisted in PostgreSQL, and append an audit
-  row for each change.
+- **Trading execution remains separate.** The standalone dashboard does
+  not construct a trading runtime or submit broker orders. Protected
+  writes update settings, toggle the shared Redis entry-pause latch, and
+  delete terminal backtest records. Manual exits require an in-process
+  runtime and are unavailable from the detached dashboard.
 - **Scores and trades remain separate records.** Existing closed-trade
   details are served from `trades`; normalized scoring results are
   stored in the new `score_snapshots` table and linked to their signal.
@@ -241,13 +255,13 @@ Browser
   only, and an unset token disables edits. The dashboard's same-origin
   UI sends the token in `X-Dashboard-Token`.
 - **The page is rendered in Python, not just served as a static file.**
-  `trading_system/api/app.py::dashboard_home()` renders
-  `frontend/templates/index.html` through Jinja2
+  `dashboard/app.py::dashboard_home()` renders
+  `dashboard/frontend/templates/index.html` through Jinja2
   (`fastapi.templating.Jinja2Templates`), passing a title/version/
   generated-at timestamp from Python into the page -- provable by the
   "Rendered by FastAPI + Jinja2 at ..." footer on every page load. Only
   the CSS and jQuery script are plain static files, served from
-  `frontend/static/` at `/static/...`.
+  `dashboard/frontend/static/` at `/static/...`.
 - **Plain jQuery, not a frontend framework**, per the explicit
   requirement -- no build step, bundler, or package manager on the
   client side.

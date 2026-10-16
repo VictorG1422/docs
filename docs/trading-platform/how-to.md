@@ -86,6 +86,15 @@ the conversion is validated and recorded in the settings audit table.
 NIFTY BANK is token `260105`, so selecting both indices gives
 `OPTIONS_WATCHLIST=[256265,260105]`.
 
+Options-watchlist positions use the intraday CE/PE profile and are
+scheduled to square off at 15:15 IST by default. Equity-watchlist positions
+use a long-only swing profile: daily candles, CNC delivery, a 2x ATR stop
+(5% fallback if history is insufficient), and a 2R target. An equity SELL
+signal closes an existing long and cannot open a short. These profile
+values can be changed in Trading & risk settings. Stops are monitored by
+the application, not held at the broker; an overnight price gap or market-
+data interruption can exceed the configured stop.
+
 ## How to view the dashboard
 
 Before running a backtest or paper session blind, it's worth knowing you
@@ -93,13 +102,13 @@ can *see* the data directly in a browser instead of reading raw log
 lines or querying the database by hand:
 
 ```powershell
-python -m trading_system.main
+python -m dashboard.main
 ```
 
-This is the only application command. It starts the dashboard/API and the
-single workflow selected by the PostgreSQL `APPLICATION_MODE` setting.
-Open `http://127.0.0.1:8000/` (or the configured dashboard host/port) in
-any browser. The dashboard reads trading records from PostgreSQL and has
+This starts only the dashboard/API. Open `http://127.0.0.1:8000/` (or the
+configured dashboard host/port) in any browser. Start the algorithm
+separately with `python -m trading_system.main`. Both processes read the
+same PostgreSQL settings. The dashboard reads trading records and has
 a protected editor for allow-listed runtime, risk, watchlist, and scoring
 settings. Use the shared sidebar to open independent, bookmarkable pages:
 
@@ -112,7 +121,7 @@ settings. Use the shared sidebar to open independent, bookmarkable pages:
 - **Score history** (`/scores`) — normalized score snapshots stored separately from signals
   and trades, including instrument symbols and scoring matches.
 - **Score settings** (`/score-settings`) — scoring thresholds and
-  individual pattern/indicator weights.
+  individual pattern/indicator weights, including the daily pivot-context weight.
 - **Instruments & watchlists** (`/instruments`) — search synchronized
   instrument records and add/remove token-based options/equity watchlist
   entries. Options watchlists analyze the underlying EQ/index and trade
@@ -129,6 +138,8 @@ settings. Use the shared sidebar to open independent, bookmarkable pages:
   rejected signals. The audit table expands score components into separate
   timeframe, direction, contribution, strength, weight, multiplier, and
   detail columns; every risk check has its own status and reason columns.
+  With the dashboard admin token, delete a terminal run to remove its
+  summary, trades, and local audit database; pending/running runs cannot be deleted.
 - **Trading & risk settings** (`/risk-settings`) — application mode,
   strategy, paper/backtest parameters, risk limits, trading hours, and
   stop-loss/target parameters.
@@ -145,9 +156,10 @@ Instruments & watchlists page to save watchlists; enter it on the relevant
 settings page to save risk or scoring settings. Keep it secret: it
 authorizes changes to trading risk and scoring configuration. Editing
 remains disabled when the token is empty. Apply the database migrations
-first with `alembic upgrade head`; migration `0011` adds the score/settings
-tables, `0012` permits NSE index reference rows, and `0013` migrates and
-seeds the unified runtime configuration.
+first with `alembic upgrade head`; migrations `0011`-`0013` add dashboard
+settings and normalize runtime configuration, `0015` persists paper swing
+positions across restarts, and `0016` seeds the options/equity profile
+defaults without replacing existing DB values.
 
 When saving an options watchlist, the API requires the synchronized
 instrument master to contain both CE and PE contracts for at least one
@@ -162,16 +174,17 @@ change the saved settings. After installing a backend code update, restart
 the dashboard process before retrying; an already-running server continues
 to use the code loaded when it started.
 
-The current configured workflow and its startup/completion status are
-available at `/api/runtime`. An invalid runtime configuration leaves the
-dashboard available for correction and prevents that workflow from
-starting. The three colored dots next to the logo show whether PostgreSQL, Redis,
+`/api/runtime` reports that the runtime is managed separately. Inspect
+Backtests, Paper Sessions, and algorithm logs for run outcomes. An invalid
+persisted configuration prevents the algorithm from starting while the
+dashboard remains available for correction. The three health indicators
+show whether PostgreSQL, Redis,
 and your Kite connection are currently healthy (the same check as
 `scripts/health_check.py`) and refresh automatically every 20 seconds.
 
-Stop the unified process with `Ctrl+C`. `scripts/run_dashboard.py` is a
-compatibility shim and starts the same unified application; it does not
-start a dashboard-only process.
+Stop each process with `Ctrl+C`. `scripts/run_dashboard.py` is a
+compatibility shim for `python -m dashboard.main`. The detached dashboard
+does not submit orders; manual position exits are unavailable from it.
 
 ## How to run a backtest
 
@@ -204,17 +217,16 @@ On **Trading & risk settings** (`/risk-settings`), select `Backtest` as
 the application mode, choose the strategy and instrument mode, set the
 start/end dates, candle interval, and initial capital. Add the underlying
 instrument token(s) to the matching options or equity watchlist on
-**Instruments & watchlists**. Save the settings, then start or restart the
-application:
+**Instruments & watchlists**. Save the settings, ensure the dashboard is
+running separately, then start or restart the algorithm:
 
 ```powershell
 python -m trading_system.main
 ```
 
-The configured backtest runs once in the background while the same
-process serves the dashboard/API. Inspect its persisted run, audit, and
-trades on `/backtests`; `GET /api/runtime` reports whether it is running,
-completed, or failed. A backtest requires both dates and at least one
+The configured backtest runs once in the algorithm process. Inspect its
+persisted run, audit, and trades on `/backtests`; use algorithm logs and
+the persisted run status for completion. A backtest requires both dates and at least one
 synchronized token in the selected watchlist. The end date is inclusive.
 The old `scripts/backtest.py` path is only a compatibility shim; it
 accepts no backtest arguments.
@@ -233,15 +245,14 @@ accepts no backtest arguments.
 Paper trading watches real-time market data while simulating orders and
 fills. Configure `APPLICATION_MODE=paper`, the strategy, candle interval,
 and one or more synchronized underlying instruments in the dashboard,
-save, and run the single application command:
+save, then start the algorithm process:
 
 ```powershell
 python -m trading_system.main
 ```
 
-The dashboard/API stays in that process. Paper sessions and runtime
-failures are visible on the dashboard and at `/api/runtime`. No real
-orders are placed in paper mode. The old `scripts/paper_trade.py` path is
+Paper sessions and runtime records are visible in the separately running
+dashboard. No real orders are placed in paper mode. The old `scripts/paper_trade.py` path is
 only a compatibility shim and accepts no session arguments.
 
 ## How to go live (placing real orders) — read this first

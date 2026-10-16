@@ -13,6 +13,16 @@ instruments, then runs backtest, paper, or live mode. It does not start an
 HTTP server. Runtime values are managed in PostgreSQL; there are no mode,
 strategy, instrument, or date command-line arguments.
 
+At startup, the algorithm fetches the NSE trading-holiday calendar for CM
+and FO from NSE and upserts it into PostgreSQL. If NSE is unreachable or
+returns invalid data, it uses the last persisted calendar plus the static
+fallback; a holiday-service failure alone does not stop trading startup.
+Migration `0017` creates the holiday table. NSE calendar maintenance
+applies to the algorithm process; a dashboard-only process does not sync it.
+The dashboard reads cached rows through `GET /api/holidays/today` and shows
+CM/FO descriptions in a banner when today is a holiday; it does not request
+the NSE API itself.
+
 ## Running the dashboard separately
 
 ```powershell
@@ -93,6 +103,14 @@ score contribution. If prior daily history is unavailable or invalid, the
 feature is omitted and existing scoring continues. Backtests use only
 daily candles from earlier IST session dates; the same-day daily bar is
 never used to create that day's pivot levels.
+
+Technical scoring also requires both entry gates: price must be above both
+EMA(200) and session VWAP for bullish bias, or below both for bearish;
+mixed/equal alignment blocks the signal. Positive-strength OI buildup or
+volume spike is required as flow confirmation. Every evaluation is logged;
+near-miss scores from 40 through 64 or -40 through -64 persist component,
+gate, and pivot details. Migrations `0018` and `0019` create diagnostics
+storage and update only untouched legacy scoring defaults, respectively.
 
 ## Running with Docker
 
@@ -175,7 +193,8 @@ Migration `0012` updates the instrument lot-size check to allow zero only
 for `INDICES` reference rows; tradable instruments still require a positive
 lot size. Migration `0011` adds dashboard score, settings, and audit tables.
 Migration `0015` adds paper-session runtime state; `0016` idempotently seeds
-the options/equity profile settings while preserving existing values.
+the options/equity profile settings while preserving existing values; `0017`
+creates the NSE CM/FO holiday cache.
 
 ## Redis setup
 

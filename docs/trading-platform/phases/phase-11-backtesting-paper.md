@@ -39,11 +39,13 @@ Without this, replaying historical dates against the *real* engines would
 silently see every tick as stale and every historical option as "expired
 today" relative to the real current date -- never because any rule
 changed, only because "now" was previously always assumed to be the real
-wall clock. `RiskEngine._check_trading_window()`'s real-wall-clock IST
-check (`trading_window_start`/`_end`, `avoid_first/last_minutes_of_session`)
-and Redis-TTL-based cooldown (`RiskPolicy.cooldown_seconds`) were
 deliberately **not** clock-injected (see Known Limitations) -- leave them
-unset for a backtest.
+wall clock. Intraday `RiskEngine._check_trading_window()` checks use the
+simulated candle-close timestamp in IST, so configured trading windows
+and opening/closing guards remain active during an intraday backtest.
+Daily equity swing runs omit intraday-only windows. Redis-TTL-based
+cooldown (`RiskPolicy.cooldown_seconds`) remains real-time based and should
+be left unset for historical replay.
 
 **Isolation:** every backtest run gets its own ephemeral SQLite database
 (`data/backtests/{run_id}.sqlite`, created fresh via
@@ -91,6 +93,19 @@ real-time last-traded price instead of "next bar". Both adapters
 implement the existing Phase 9 `BrokerOrderAdapter` interface and are
 handed to the real `OrderExecutionEngine` -- neither ever calls
 `KiteBrokerAdapter`/`Broker.place_order`.
+
+Configured OPTIONS backtests use 75 basis points (0.75%) of adverse
+premium slippage with the next-bar-open fill rule. EQUITY backtests default
+to zero slippage; paper execution is unchanged. The durable run
+configuration records scoring weights/thresholds/gates, the effective risk
+policy, and execution assumptions. In OPTIONS mode, ATR(14) stops use the
+selected CE/PE contract's premium candles, not the underlying's candles.
+
+Every technical scorer evaluation is logged. Near-miss scores from 40
+through 64 or -40 through -64 are persisted with all component values,
+macro/flow gate results and reasons, and pivot context. These records are
+copied into the durable run summary so the dashboard can show them after the
+per-run SQLite audit file is removed.
 
 **Transaction costs (`backtest/costs.py`):** `TransactionCostModel` --
 every rate (brokerage, exchange charges, STT, GST, SEBI charges, stamp
@@ -173,7 +188,10 @@ underlying has no historical candles. No web framework was added.
 **Persistence/migration:** `0010_backtest_paper` adds `backtest_runs`,
 `backtest_trades`, `paper_sessions`; `0015` adds restartable paper runtime
 state and `0016` seeds the profile settings without overwriting existing
-values. Apply `alembic upgrade head` before using these profile changes.
+values; `0017` caches NSE CM/FO holidays; `0018` adds near-miss diagnostics;
+`0019` updates only score-weight rows still equal to the previous shipped
+defaults, preserving operator edits. Apply `alembic upgrade head` before
+using these changes.
 
 **Tests and boundary:** `test_backtest_portfolio.py` (9, hand-computed
 accounting examples), `test_backtest_metrics.py` (9, zero-trade/zero-loss/

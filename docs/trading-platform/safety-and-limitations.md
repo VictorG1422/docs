@@ -50,6 +50,11 @@
   temporarily unreachable database never prevents the app from starting;
   `app.health()` reports `postgresql: false` until connectivity is
   restored. The same is true for `RedisClient`/`redis`.
+- **Holiday calendar refresh**: the algorithm fetches NSE CM/FO holidays
+  at startup and stores them in PostgreSQL. If NSE is unavailable, it uses
+  the last persisted calendar plus the static fallback. This still depends
+  on NSE publishing a complete, parseable calendar; verify unexpected or
+  ad hoc closures operationally.
 - **Redis is never authoritative**: `PositionStateStore`/`MarketStateStore`/
   `StrategyStateStore` are fast-access caches only -- PostgreSQL (and/or
   broker state) remains the durable source of truth.
@@ -96,8 +101,6 @@ detail. Key open items:
   broker's net per-instrument exposure. Discrepancies that cannot be safely
   attributed require manual action; reconciliation never submits corrective
   orders.
-- NSE holiday calendar sourced from PostgreSQL/a periodic sync job
-  instead of the static fallback list in `utils/time_utils.py`.
 - Option-chain/tick/candle/signal snapshotting to S3.
 - Additional risk checks once the strategy specification exists: margin,
   per-instrument exposure limits beyond what `RiskPolicy` already
@@ -116,8 +119,9 @@ detail. Key open items:
   if the Kite WebSocket disconnects or ticks become stale, the local
   tick-triggered exit monitor cannot react until the feed recovers. Orders
   are still gated by `ORDER_EXECUTION_ENABLED`, live mode, and production
-  environment checks. `RiskEngine._check_trading_window()`'s
-  real-wall-clock IST check and Redis-TTL-based cooldown
-  (`RiskPolicy.cooldown_seconds`) are not clock-injected for backtesting.
+  environment checks. Intraday backtests evaluate configured trading
+  windows and session-edge guards at simulated candle-close IST time.
+  Daily equity swing backtests omit these intraday-only guards. Redis-TTL-
+  based cooldown (`RiskPolicy.cooldown_seconds`) remains tied to real time.
   Paper sessions run in `python -m trading_system.main` and are configured
   through PostgreSQL settings managed by the separate dashboard process.

@@ -115,16 +115,15 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     Each detector returns a `PatternMatch` (`name`, `direction`,
     `strength` 0-100) -- detection confidence only, never an importance
     weight.
-  - **Patterns are weighted above pure indicators by default**
-    (`scoring._DEFAULT_WEIGHTS`) -- e.g. `head_and_shoulders` (32),
-    `star_reversal`/`three_candle_continuation` (28-30), `engulfing`
-    (25), `oi_buildup` (24) all outweigh `macd_crossover` (14),
-    `rsi_extreme`/`ema_trend_cross` (12), `bollinger_reversion` (10),
-    `volume_spike` (8), `vwap_bias` (6).
-    Indicators remain in the confluence as supporting confirmation, at a
-    reduced weight, per explicit product preference: a pattern is a
-    direct read of price structure, while an indicator is a lagging
-    derived result. Fully overridable via `ScoringConfig.weights`.
+  - **Current default weights** are configurable through
+    `ScoringConfig.weights`: `head_and_shoulders=0`, `doji=0`,
+    `vwap_bias=25`, `oi_buildup=25`, `volume_spike=20`,
+    `ema_trend_cross=16`, `star_reversal=20`,
+    `three_candle_continuation=20`, `engulfing=15`, `hammer=12`,
+    `shooting_star=12`, `trend_structure=12`, `macd_crossover=10`,
+    `rsi_extreme=10`, `bollinger_reversion=10`, `pivot_context=8`.
+    Migration `0019` updates dashboard rows that still equal previous
+    shipped defaults; operator-edited values are retained.
   - `trading_system/strategy/scoring.py::TechnicalScorer`/`ScoringConfig`
     -- combines every pattern match from the primary timeframe **and**
     every configured confirmation timeframe ("patterns should check in
@@ -135,7 +134,12 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     default 0.6x). A signal only fires once the score crosses
     `buy_score_threshold`/`sell_score_threshold` (default 50) --
     confluence of multiple independent signals, never a single
-    indicator alone (unless its weight alone exceeds the threshold). A
+    indicator alone (unless its weight alone exceeds the threshold). Before
+    scoring or triggering, both entry gates must pass: price above both
+    EMA(200) and session VWAP is bullish, below both is bearish, and mixed
+    or equal alignment has no macro bias; additionally, OI buildup or a
+    volume spike must have positive strength. Gate failure forces the score
+    to zero and blocks a signal. A
     separate EMA-based trend filter on each confirmation timeframe can
     **veto** a signal outright when it conflicts with the higher-
     timeframe trend (`require_confirmation_alignment`, default `True`)
@@ -150,6 +154,11 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     auditable. Slots into the existing framework unchanged:
     `StrategyEngine` still owns signal identity/dedup/cooldown/
     validation/persistence.
+  - Every scorer evaluation emits a structured log. Scores from 40 through
+    64, or -40 through -64, persist the full component breakdown, both gate
+    results/reasons, and pivot levels. Backtest diagnostics are copied into
+    the durable run summary rather than remaining only in the per-run SQLite
+    database.
   - Not wired into `Application`/`NoOpStrategy`'s place automatically --
     same deliberate "framework exists, nothing forces it live" choice
     as the rest of Phase 7.

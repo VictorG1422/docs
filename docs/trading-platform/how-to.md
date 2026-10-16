@@ -112,6 +112,10 @@ same PostgreSQL settings. The dashboard reads trading records and has
 a protected editor for allow-listed runtime, risk, watchlist, and scoring
 settings. Use the shared sidebar to open independent, bookmarkable pages:
 
+Use **Export Excel** in the toolbar to download all non-empty tables on the
+current page as a multi-sheet `.xlsx` workbook. It includes rows already
+loaded in the page; limited or paginated tables do not fetch extra records.
+
 - **Dashboard** (`/`) — filled trades, open positions, realized and unrealized
   P/L, win ratio, failed/pending orders, and activity counts. Available
   account cash is fetched live from Kite and shown as unavailable if the
@@ -138,6 +142,11 @@ settings. Use the shared sidebar to open independent, bookmarkable pages:
   rejected signals. The audit table expands score components into separate
   timeframe, direction, contribution, strength, weight, multiplier, and
   detail columns; every risk check has its own status and reason columns.
+  Run setup also records scoring weights/thresholds/gates, the effective
+  risk policy, and execution assumptions. The scoring near-miss section
+  shows macro/flow gate outcomes and reasons, pivot context, and every
+  component value. OPTIONS fills use the next bar's open with 0.75%
+  adverse premium slippage; EQUITY fills retain zero slippage by default.
   With the dashboard admin token, delete a terminal run to remove its
   summary, trades, and local audit database; pending/running runs cannot be deleted.
 - **Trading & risk settings** (`/risk-settings`) — application mode,
@@ -159,7 +168,9 @@ remains disabled when the token is empty. Apply the database migrations
 first with `alembic upgrade head`; migrations `0011`-`0013` add dashboard
 settings and normalize runtime configuration, `0015` persists paper swing
 positions across restarts, and `0016` seeds the options/equity profile
-defaults without replacing existing DB values.
+defaults without replacing existing DB values. `0017` caches NSE holidays,
+`0018` stores near-miss diagnostics, and `0019` updates only scoring weights
+that still match the old shipped defaults.
 
 When saving an options watchlist, the API requires the synchronized
 instrument master to contain both CE and PE contracts for at least one
@@ -236,7 +247,7 @@ accepts no backtest arguments.
 | What you see | What it means | What to do |
 | --- | --- | --- |
 | `INSUFFICIENT_CAPITAL` rejections | The selected option/equity position exceeds configured risk or exposure limits. | Review the contract and persisted risk checks in the backtest audit before changing limits. |
-| `OUTSIDE_TRADING_WINDOW` on every signal | Trading-window checks use live session time; historical runs clear those wall-clock-only guards. | Inspect the backtest run audit and application logs. |
+| `OUTSIDE_TRADING_WINDOW` on a signal | Intraday backtests evaluate configured windows and first/last-session guards at the simulated candle-close time in IST. Daily equity swing backtests do not apply intraday-only windows. | Check the saved window/edge settings and inspect the signal timestamp and risk reason in the audit. |
 | Zero trades despite signal activity | Option contract/premium candles may be unavailable, or risk checks may reject signals. | Inspect score-component columns, signal/risk reasons, and data-quality warnings in the run audit. |
 | `status: FAILED` | Something broke — most commonly, the database schema isn't up to date. | Run `alembic upgrade head` (see "How to update the database" below), then try again. |
 

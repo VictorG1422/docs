@@ -98,7 +98,9 @@ completed 1440-minute session candle. It records `P`, `BC`/`TC`, `R1`-`R3`,
 `S1`-`S3`, CPR bounds/width, and the source session date in the signal
 snapshot. Price above/below the CPR contributes one bullish/bearish
 `pivot_context` score (default weight 8); crossing beyond R1/S1 increases
-that feature's strength. Price inside the CPR is neutral. R2/R3/S2/S3 are
+that feature's strength. Displayed pivot/CPR levels are rounded to two
+decimal places; calculations retain full Decimal precision. Price inside
+the CPR is neutral. R2/R3/S2/S3 are
 context only, not automatic targets or exits. Set
 `SCORING_WEIGHT_PIVOT_CONTEXT=0` in dashboard score settings to disable its
 score contribution. If prior daily history is unavailable or invalid, the

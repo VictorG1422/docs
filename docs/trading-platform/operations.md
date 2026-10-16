@@ -21,7 +21,9 @@ Migration `0017` creates the holiday table. NSE calendar maintenance
 applies to the algorithm process; a dashboard-only process does not sync it.
 The dashboard reads cached rows through `GET /api/holidays/today` and shows
 CM/FO descriptions in a banner when today is a holiday; it does not request
-the NSE API itself.
+the NSE API itself. The **Market Holidays** page (`/holidays`) lists all
+cached dates, segments, descriptions, and sync timestamps from
+`GET /api/holidays`.
 
 ## Running the dashboard separately
 

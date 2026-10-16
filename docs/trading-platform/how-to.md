@@ -122,6 +122,8 @@ loaded in the page; limited or paginated tables do not fetch extra records.
   broker balance cannot be retrieved.
 - **Metrics** (`/metrics`) — the complete set of account, activity, and
   P/L metrics.
+- **Market holidays** (`/holidays`) — the cached NSE trading-holiday list,
+  with dates, CM/FO segments, descriptions, and sync timestamps.
 - **Score history** (`/scores`) — normalized score snapshots stored separately from signals
   and trades, including instrument symbols and scoring matches.
 - **Score settings** (`/score-settings`) — scoring thresholds and

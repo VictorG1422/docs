@@ -122,8 +122,11 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     `three_candle_continuation=20`, `engulfing=15`, `hammer=12`,
     `shooting_star=12`, `trend_structure=12`, `macd_crossover=10`,
     `rsi_extreme=10`, `bollinger_reversion=10`, `pivot_context=8`.
-    Migration `0019` updates dashboard rows that still equal previous
-    shipped defaults; operator-edited values are retained.
+    Migration `0019` updates rows still equal previous shipped defaults;
+    migration `0020` persists this explicitly requested weight set over
+    earlier dashboard weight overrides and records each change in the
+    settings audit table. Other settings, including score thresholds, are
+    unchanged.
   - `trading_system/strategy/scoring.py::TechnicalScorer`/`ScoringConfig`
     -- combines every pattern match from the primary timeframe **and**
     every configured confirmation timeframe ("patterns should check in

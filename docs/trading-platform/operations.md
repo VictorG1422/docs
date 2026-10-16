@@ -109,8 +109,10 @@ EMA(200) and session VWAP for bullish bias, or below both for bearish;
 mixed/equal alignment blocks the signal. Positive-strength OI buildup or
 volume spike is required as flow confirmation. Every evaluation is logged;
 near-miss scores from 40 through 64 or -40 through -64 persist component,
-gate, and pivot details. Migrations `0018` and `0019` create diagnostics
-storage and update only untouched legacy scoring defaults, respectively.
+gate, and pivot details. Migration `0018` creates diagnostics storage;
+`0019` updates legacy default rows, and `0020` persists the requested score
+weights with an audit entry while leaving thresholds and other settings
+unchanged.
 
 ## Running with Docker
 

@@ -170,7 +170,9 @@ settings and normalize runtime configuration, `0015` persists paper swing
 positions across restarts, and `0016` seeds the options/equity profile
 defaults without replacing existing DB values. `0017` caches NSE holidays,
 `0018` stores near-miss diagnostics, and `0019` updates only scoring weights
-that still match the old shipped defaults.
+that still match the old shipped defaults. `0020` applies the requested
+scoring weights to saved dashboard settings and records each change in the
+settings audit table without changing score thresholds.
 
 When saving an options watchlist, the API requires the synchronized
 instrument master to contain both CE and PE contracts for at least one

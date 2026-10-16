@@ -190,7 +190,9 @@ underlying has no historical candles. No web framework was added.
 state and `0016` seeds the profile settings without overwriting existing
 values; `0017` caches NSE CM/FO holidays; `0018` adds near-miss diagnostics;
 `0019` updates only score-weight rows still equal to the previous shipped
-defaults, preserving operator edits. Apply `alembic upgrade head` before
+defaults; `0020` applies the explicitly requested weight set over previous
+dashboard weight overrides and records those changes in the settings audit
+table without changing thresholds. Apply `alembic upgrade head` before
 using these changes.
 
 **Tests and boundary:** `test_backtest_portfolio.py` (9, hand-computed

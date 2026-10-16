@@ -100,6 +100,14 @@ to zero slippage; paper execution is unchanged. The durable run
 configuration records scoring weights/thresholds/gates, the effective risk
 policy, and execution assumptions. In OPTIONS mode, ATR(14) stops use the
 selected CE/PE contract's premium candles, not the underlying's candles.
+OPTIONS macro/flow gates use an expiry-valid synchronized FUT contract:
+the future's close is compared with its EMA(200) and session VWAP, and its
+VWAP-bias, OI-buildup, and volume-spike detectors supply the flow evidence.
+Other patterns and the signal price remain based on the configured index or
+underlying candles. Backtest bars must align exactly by timestamp; absent
+future history fails the run, and an absent bar blocks that timestamp rather
+than carrying stale flow data forward. The chosen future is recorded in the
+backtest configuration snapshot.
 
 Every technical scorer evaluation is logged. Near-miss scores from 40
 through 64 or -40 through -64 are persisted with all component values,

@@ -116,6 +116,14 @@ gate, and pivot details. Migration `0018` creates diagnostics storage;
 weights with an audit entry while leaving thresholds and other settings
 unchanged.
 
+In OPTIONS mode, the gates use a synchronized, unexpired FUT contract,
+because index candles do not provide OI and may have no usable volume. Its
+close, EMA/VWAP, OI, and volume supply only macro/flow confirmation; the
+index remains the pattern-scoring and signal source. Live and paper entries
+wait for a matching futures candle, and missing or misaligned reference data
+fails closed. Sync NFO futures before starting the OPTIONS runtime or a
+backtest; the backtest fails validation if no contract covers the full run.
+
 ## Running with Docker
 
 ```powershell

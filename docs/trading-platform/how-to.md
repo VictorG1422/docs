@@ -92,13 +92,20 @@ NIFTY BANK is token `260105`, so selecting both indices gives
 `OPTIONS_WATCHLIST=[256265,260105]`.
 
 Options-watchlist positions use the intraday CE/PE profile and are
-scheduled to square off at 15:15 IST by default. Equity-watchlist positions
+scheduled to square off at 15:00 IST by default. Equity-watchlist positions
 use a long-only swing profile: daily candles, CNC delivery, a 2x ATR stop
 (5% fallback if history is insufficient), and a 2R target. An equity SELL
 signal closes an existing long and cannot open a short. These profile
 values can be changed in Trading & risk settings. Stops are monitored by
 the application, not held at the broker; an overnight price gap or market-
 data interruption can exceed the configured stop.
+
+Configured paper mode runs all selected instruments in one session with one
+shared capital pool and risk budget. Each instrument keeps its own strategy
+engine. Older per-instrument sessions with open positions or pending orders
+must be reconciled before the runtime can consolidate them. Confirmation
+timeframes default to 15, 30, 60, 240, and 1440 minutes; 4h history is built
+from hourly bars because Kite does not provide a native 240-minute interval.
 
 ## How to view the dashboard
 
@@ -175,6 +182,19 @@ loaded in the page; limited or paginated tables do not fetch extra records.
 - **Operational pages** — Signals, Orders, Positions, Trades, Risk
   Decisions, Trade Intents, Reconciliation, and Candles
   each have their own page and refresh action.
+
+Signals show compact fields with an expandable human-readable detail panel;
+the scoring evaluation audit appears below. Near-miss components with zero
+contribution are omitted. `STRATEGY_EVALUATION_LOGGING_ENABLED` defaults to
+false; enable **Persist every scoring evaluation** in Trading & risk settings
+to store all scoring attempts, then restart the algorithm. This increases
+database write and storage volume.
+
+Orders and Signals offer an admin-token-protected Delete action only for
+eligible unlinked records. Filled orders, algorithm-linked orders, paper-
+session signals, and signals with score/risk/trade history are retained. The
+API displays the reason when a record cannot be deleted; deleting a row never
+acts as a position exit.
 
 Every displayed date/time is explicitly formatted in **IST
 (`Asia/Kolkata`)**, regardless of the browser or computer timezone.

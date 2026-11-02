@@ -109,11 +109,13 @@ future history fails the run, and an absent bar blocks that timestamp rather
 than carrying stale flow data forward. The chosen future is recorded in the
 backtest configuration snapshot.
 
-Every technical scorer evaluation is logged. Near-miss scores from 40
-through 64 or -40 through -64 are persisted with all component values,
-macro/flow gate results and reasons, and pivot context. These records are
-copied into the durable run summary so the dashboard can show them after the
-per-run SQLite audit file is removed.
+Near-miss scores from 40 through 64 or -40 through -64 are persisted by
+default with nonzero component contributions, macro/flow gate results and
+reasons, and pivot context. The database-managed `Persist every scoring
+evaluation` setting additionally records below-threshold evaluations for
+paper, live, and configured backtest workflows; it defaults off to limit
+database growth. Backtest diagnostics are copied into the durable run summary
+so the dashboard can show them after the per-run SQLite audit file is removed.
 
 **Transaction costs (`backtest/costs.py`):** `TransactionCostModel` --
 every rate (brokerage, exchange charges, STT, GST, SEBI charges, stamp
@@ -156,7 +158,8 @@ health must be monitored.
 
 **Separate options and equity profiles:** options remain intraday: bullish
 signals buy CE, bearish signals buy PE, and open CE/PE positions are
-scheduled for square-off at the configured IST cutoff (default `15:15`).
+scheduled for square-off at the configured IST cutoff (default `15:00`;
+later configured values normalize to 15:00).
 Equity watchlist entries use daily candles and CNC delivery. They are
 long-only: an equity SELL closes an existing long and is ignored when no
 long exists. The default swing protection is a `2x ATR` stop, a `5%`
@@ -167,10 +170,13 @@ are not broker-held orders, so price gaps and feed/order failures can exceed
 the nominal stop. This profile is configurable, not a claim of strategy
 validation or production approval.
 
-**Paper-session management (`backtest/paper.py`):** `PaperTradingSession`
-is keyed by `strategy_name:instrument_token:timeframe`; `start()` rejects
-a second concurrent `RUNNING` session for the same key
-(`PaperSessionRepository.get_running_by_session_key`). A stopped session's
+**Paper-session management (`backtest/paper.py`):** configured watchlists use
+one parent `PaperSession` record and audit UUID for all instrument engines.
+They share one cash portfolio, capital pool, rejected count, and risk budget;
+instruments retain separate strategy engines and timeframes. Snapshots contain
+all positions, trades, and pending orders. Legacy per-instrument sessions with
+open positions or pending orders prevent automatic consolidation and require
+reconciliation. A stopped session's
 candle listener checks its own status and drops any further event --
 proven in `test_paper_trading_session.py`. There is no background
 daemon/process manager in this phase; `scripts/paper_trade.py` runs in the
@@ -186,6 +192,20 @@ detail page provides the backtest-style score breakdown, trade final scores,
 portfolio metrics, and config snapshot. Admin deletion is limited to stopped
 sessions with no open positions/pending orders and preserves shared trading
 records. No additional schema migration is required.
+
+Open option contracts remain subscribed for quote-based stop/target checks
+and pending-order refreshes, but are excluded from candle aggregation and
+candle persistence. The paper subscription reconciler unsubscribes a contract
+after its last open position and pending order are gone. Live subscription
+reconciliation uses broker positions and non-terminal orders; PostgreSQL is
+authoritative for positions and Redis state is cleared on confirmed flatness.
+
+**Indicators and candlestick patterns:** SMA, EMA, RSI, MACD, ATR, VWAP,
+Bollinger Bands, and bundled candlestick detectors use `pandas-ta-classic`
+with a timezone-aware pandas index. Public wrappers retain typed result
+objects and return `None` for insufficient history. Swing-structure/H&S,
+OI/volume context, and exchange-specific prior-day levels remain explicit
+domain rules because the TA package does not define those semantics.
 
 **Restart/recovery:** `BacktestRunRepository.list_incomplete()`
 finds runs that never reached `COMPLETED`/`FAILED` (e.g. the process was

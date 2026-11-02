@@ -52,10 +52,12 @@ contracts message, synchronize NSE and NFO instrument data with
 exist at a common eligible expiry. A rejected save leaves the previous
 setting unchanged.
 
-Paper-mode restarts preserve completed session records under
-`archived:<session UUID>` and create a fresh record for the configured
-strategy/instrument/timeframe key. A record still marked `RUNNING` blocks
-another session; do not delete historical rows to resolve a restart error.
+Configured paper mode runs all selected watchlist instruments in one parent
+session, with one audit UUID, cash portfolio, capital pool, and risk budget.
+Each instrument still has its own strategy engine and timeframe. A stopped
+parent session is archived when restarted. Older per-instrument sessions
+with open positions or pending orders prevent automatic consolidation; reconcile
+or close those exposures first. A record still marked `RUNNING` blocks restart.
 
 The Paper Sessions list links to `/paper-sessions/{session_id}` for portfolio
 metrics, open positions, pending orders, completed trades and signal scores,
@@ -73,7 +75,9 @@ near-miss diagnostics. It refuses active sessions, open portfolios, and
 pending orders, and preserves shared signals/orders/risk records. Historical
 sessions without the newer snapshot and ownership fields cannot supply all
 details retroactively. Restart the paper runtime to collect the richer data;
-the detached dashboard never starts or stops trading.
+the detached dashboard never starts or stops trading. Only unlinked legacy
+signals and terminal, unfilled legacy orders can be hard-deleted; algorithm-
+linked/fill-history records remain protected audit history.
 
 WebSocket startup is visible at INFO level: `KITE_WS_CONNECT_ATTEMPT`,
 `KITE_WS_CONNECTED`, `KITE_WS_SUBSCRIBE_ATTEMPT`, then
@@ -103,7 +107,8 @@ still stops paper sessions rather than operating without market data.
 
 The options watchlist uses the intraday profile: BUY signals select a CE,
 SELL signals select a PE, and open option positions are squared off at
-`OPTIONS_INTRADAY_SQUARE_OFF_TIME` (default `15:15` IST). The equity
+`OPTIONS_INTRADAY_SQUARE_OFF_TIME` (default `15:00` IST; later values are
+normalized to 15:00). The equity
 watchlist uses a long-only swing profile: daily candles, CNC delivery,
 ATR stop at `2.0x` with a `5%` fallback when ATR history is insufficient,
 and a target at `2R`. An equity SELL closes an existing long; it never
@@ -119,6 +124,25 @@ position. Validate the strategy and operating procedures before any live
 use; tests do not constitute production approval.
 
 ## Daily pivot context
+
+Configured confirmation timeframes default to 15m, 30m, 60m, 4h, and daily.
+The 4h candles are resampled from hourly history because Kite has no native
+240-minute historical interval. Higher-timeframe candles align to the NSE
+09:15 IST open; missing history is omitted rather than fabricated. Prior-day
+open bias and confirmed high/low breaks have separate scoring weights and use
+only a strictly earlier IST session's completed daily candle.
+
+The `Persist every scoring evaluation` setting defaults off; near misses are
+still logged. Enabling it stores below-threshold evaluations in the Signals
+page audit table after the trading process restarts. Zero-contribution
+components are not stored or displayed.
+
+Completed candles are persisted for configured signal/gate instruments to
+support dashboard inspection and historical fallback. Option contracts
+subscribed only for open-order/position quotes still feed stop/target checks
+and pending-fill refreshes, but do not generate unused candles. Raw ticks are
+not persisted. Retention and partitioning are database operations; preserve
+candles needed by active backtests and audits.
 
 `technical_scoring` calculates classic pivots once from the previous
 completed 1440-minute session candle. It records `P`, `BC`/`TC`, `R1`-`R3`,
@@ -138,9 +162,9 @@ never used to create that day's pivot levels.
 Technical scoring also requires both entry gates: price must be above both
 EMA(200) and session VWAP for bullish bias, or below both for bearish;
 mixed/equal alignment blocks the signal. Positive-strength OI buildup or
-volume spike is required as flow confirmation. Every evaluation is logged;
-near-miss scores from 40 through 64 or -40 through -64 persist component,
-gate, and pivot details. Migration `0018` creates diagnostics storage;
+volume spike is required as flow confirmation. Near-miss scores from 40
+through 64 or -40 through -64 persist component, gate, and pivot details by
+default. Migration `0018` creates diagnostics storage;
 `0019` updates legacy default rows, and `0020` persists the requested score
 weights with an audit entry while leaving thresholds and other settings
 unchanged.

@@ -176,6 +176,17 @@ proven in `test_paper_trading_session.py`. There is no background
 daemon/process manager in this phase; `scripts/paper_trade.py` runs in the
 foreground until `Ctrl+C`.
 
+Paper portfolio snapshots now include completed trades, open positions,
+pending orders, and equity history for both instrument modes. Performance
+statistics reuse the backtest metric functions and remain unavailable when
+the stored history is insufficient. New signals and score diagnostics carry
+the paper session UUID, allowing the dashboard detail API to retrieve the
+exact session audit without combining live or unrelated paper signals. The
+detail page provides the backtest-style score breakdown, trade final scores,
+portfolio metrics, and config snapshot. Admin deletion is limited to stopped
+sessions with no open positions/pending orders and preserves shared trading
+records. No additional schema migration is required.
+
 **Restart/recovery:** `BacktestRunRepository.list_incomplete()`
 finds runs that never reached `COMPLETED`/`FAILED` (e.g. the process was
 killed mid-run) for manual inspection -- a backtest is not auto-resumed.

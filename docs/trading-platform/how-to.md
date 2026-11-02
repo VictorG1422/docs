@@ -52,8 +52,13 @@ python scripts/download_instruments.py NFO
 python scripts/download_instruments.py NSE NFO
 ```
 
-The sync upserts by instrument token, so it is safe to re-run and does not
-delete existing instrument or trade rows.
+Sync updates by instrument token and removes instruments absent from the
+latest valid, nonempty Kite snapshot for that exchange. Obsolete instruments
+referenced by signals, orders, positions, trades, trade intents, or
+reconciliation records are retained to preserve history; those records are
+never deleted by sync. Empty or partly invalid downloads skip pruning, and
+database failures roll back both updates and deletions. Completion logs show
+removed and history-linked retained counts.
 
 The main trading application, paper-trading start command, and backtest
 command also refresh **both NSE and NFO at every process start** before
@@ -156,8 +161,19 @@ loaded in the page; limited or paginated tables do not fetch extra records.
 - **Trading & risk settings** (`/risk-settings`) — application mode,
   strategy, paper/backtest parameters, risk limits, trading hours, and
   stop-loss/target parameters.
+- **Paper sessions** (`/paper-sessions`) — select a session to inspect its
+  cash/equity, gross/net and unrealized P/L, costs, win/loss statistics,
+  drawdown, holding time, Sharpe/Sortino, streaks, exposure, rejected entries,
+  open positions, pending orders, completed trades with final signal scores,
+  equity history, score diagnostics, and signal/risk/order audit. New sessions
+  save snapshots after processed candles and fills; the detail view refreshes
+  every 30 seconds. Ratios without sufficient observations are unavailable,
+  not zero. Older sessions may lack detailed snapshots or session-linked
+  audit records. With the admin token, delete a stopped session only when it
+  has no open positions or pending orders. Shared trading audit records are
+  retained; deleting a session is not an exit or stop-trading command.
 - **Operational pages** — Signals, Orders, Positions, Trades, Risk
-  Decisions, Trade Intents, Reconciliation, Candles, and Paper Sessions
+  Decisions, Trade Intents, Reconciliation, and Candles
   each have their own page and refresh action.
 
 Every displayed date/time is explicitly formatted in **IST

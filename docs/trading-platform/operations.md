@@ -57,6 +57,24 @@ Paper-mode restarts preserve completed session records under
 strategy/instrument/timeframe key. A record still marked `RUNNING` blocks
 another session; do not delete historical rows to resolve a restart error.
 
+The Paper Sessions list links to `/paper-sessions/{session_id}` for portfolio
+metrics, open positions, pending orders, completed trades and signal scores,
+equity history, near-miss diagnostics, and signal/risk/order audit. New paper
+signals and diagnostics carry an immutable session ID; unrelated sessions and
+live records are excluded. Both OPTIONS and EQUITY save snapshots after
+processed candles/fills and at shutdown. Equity restarts retain their saved
+completed-trade history; historical snapshots with incomplete trade details
+show unavailable derived statistics. Processing errors remain visible after
+shutdown. Metrics are portfolio-lifetime snapshots, not guaranteed real-time
+quotes; Sharpe/Sortino use the existing 252-period annualization convention.
+
+Protected session deletion removes only a stopped session snapshot and its
+near-miss diagnostics. It refuses active sessions, open portfolios, and
+pending orders, and preserves shared signals/orders/risk records. Historical
+sessions without the newer snapshot and ownership fields cannot supply all
+details retroactively. Restart the paper runtime to collect the richer data;
+the detached dashboard never starts or stops trading.
+
 WebSocket startup is visible at INFO level: `KITE_WS_CONNECT_ATTEMPT`,
 `KITE_WS_CONNECTED`, `KITE_WS_SUBSCRIBE_ATTEMPT`, then
 `KITE_SUBSCRIPTION_UPDATED`. The subscription update confirms the client
@@ -71,6 +89,15 @@ timestamps are shown in IST (+05:30). Ctrl+C invokes application shutdown,
 unsubscribes tokens, dispatches the close call on Twisted's reactor thread,
 and waits briefly for the close callback before aborting the local transport
 if the peer does not complete the handshake.
+
+The WebSocket uses hostname-aware TLS (SNI) and the operating system's
+trusted CA certificates, with certificate and hostname verification enabled.
+Kite's generic Twisted TLS context can fail with code `1006` even when REST
+authentication succeeds; on Windows, Twisted's default CA lookup can also
+differ from Python's system trust store. Startup timeout cleanup runs on the
+reactor thread, stops retries, and disconnects unfinished connectors. An
+explicitly disabled reconnect setting allows no retries. A failed startup
+still stops paper sessions rather than operating without market data.
 
 ## Trading profiles
 
@@ -342,6 +369,12 @@ python scripts/download_instruments.py NSE NFO  # sync selected exchanges
 readiness probe. `download_instruments.py` upserts instruments into the
 `instruments` table via `InstrumentSyncService` -- safe to run
 repeatedly, existing rows are updated in place rather than duplicated.
+After a valid, nonempty exchange snapshot is downloaded, instruments no
+longer present are deleted unless referenced by trading or reconciliation
+records. Cleanup is scoped to that exchange and committed atomically with
+the updates. Empty or invalid snapshots skip deletion. Logs include
+`instruments_removed` and `instruments_retained_for_history`; sync never
+deletes the linked trading history.
 NSE sync includes `NIFTY 50` and `NIFTY BANK` index references; these have
 zero lot/tick sizes and are for dashboard inspection, not order placement.
 

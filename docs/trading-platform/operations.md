@@ -12,6 +12,9 @@ loads secrets and validated PostgreSQL settings, synchronizes required
 instruments, then runs backtest, paper, or live mode. It does not start an
 HTTP server. Runtime values are managed in PostgreSQL; there are no mode,
 strategy, instrument, or date command-line arguments.
+Paper and live runtimes automatically begin graceful shutdown at or after
+15:30 IST, using the same cleanup path as Ctrl+C/SIGTERM. Backtests are not
+cut off by the market-close timer.
 
 At startup, the algorithm fetches the NSE trading-holiday calendar for CM
 and FO from NSE and upserts it into PostgreSQL. If NSE is unreachable or

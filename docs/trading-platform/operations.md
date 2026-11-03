@@ -102,6 +102,12 @@ differ from Python's system trust store. Startup timeout cleanup runs on the
 reactor thread, stops retries, and disconnects unfinished connectors. An
 explicitly disabled reconnect setting allows no retries. A failed startup
 still stops paper sessions rather than operating without market data.
+When Kite exhausts its bounded reconnect attempts, the live and paper
+runtimes recreate the WebSocket and resend the active subscription set on
+their recovery cycle. `Application.health()` reports `market_data_feed`
+separately from Kite REST authentication, so a valid REST session no longer
+masks a dead tick feed. Verify a received tick after recovery; a subscription
+command is not proof of tick delivery.
 
 ## Trading profiles
 
@@ -113,6 +119,12 @@ watchlist uses a long-only swing profile: daily candles, CNC delivery,
 ATR stop at `2.0x` with a `5%` fallback when ATR history is insufficient,
 and a target at `2R`. An equity SELL closes an existing long; it never
 opens a short. Swing positions are retained across paper-process restarts.
+For daily candles, technical scoring uses price versus EMA(200) for its
+macro gate and historical daily volume for flow confirmation; intraday VWAP
+is not used as a daily gate. Confirmation candles only count when their
+interval is strictly higher than the primary interval, so the default
+intraday confirmation set does not add confirmation to a daily equity
+strategy.
 
 The profile values are editable under Trading & risk settings and are
 stored in PostgreSQL. Run the migrations before starting this version;
@@ -159,9 +171,10 @@ feature is omitted and existing scoring continues. Backtests use only
 daily candles from earlier IST session dates; the same-day daily bar is
 never used to create that day's pivot levels.
 
-Technical scoring also requires both entry gates: price must be above both
-EMA(200) and session VWAP for bullish bias, or below both for bearish;
-mixed/equal alignment blocks the signal. Positive-strength OI buildup or
+Intraday technical scoring also requires both macro gates: price must be
+above both EMA(200) and session VWAP for bullish bias, or below both for
+bearish; mixed/equal alignment blocks the signal. Daily scoring uses price
+versus EMA(200) without intraday VWAP. Positive-strength OI buildup or
 volume spike is required as flow confirmation. Near-miss scores from 40
 through 64 or -40 through -64 persist component, gate, and pivot details by
 default. Migration `0018` creates diagnostics storage;
@@ -176,6 +189,11 @@ index remains the pattern-scoring and signal source. Live and paper entries
 wait for a matching futures candle, and missing or misaligned reference data
 fails closed. Sync NFO futures before starting the OPTIONS runtime or a
 backtest; the backtest fails validation if no contract covers the full run.
+For live protective monitoring, broker positions are refreshed during the
+recovery cycle rather than fetched on every tick. If that snapshot is older
+than 30 seconds, the runtime withholds protective action until it can refresh
+broker exposure; check reconciliation and broker connectivity before
+resuming.
 
 ## Running with Docker
 

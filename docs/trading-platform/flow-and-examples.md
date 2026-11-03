@@ -127,10 +127,13 @@ with a 1.5x multiplier, 1.5x reward:risk target, NIFTY lot size 75.
 
 1. **A candle closes.** At 10:05 AM, the 5-minute NIFTY index candle
    completes: open 22,110, high 22,160, low 22,100, close 22,150.
-2. **The strategy fires.** Suppose the configured strategy spots a
-   bullish engulfing candle plus RSI crossing up through 55 -- enough
-   combined weight to cross its BUY threshold. It returns a `BUY`
-   decision at price 22,150.
+2. **The strategy fires.** For `technical_scoring`, assume completed-candle
+   pattern matches produce a weighted score at or above the BUY threshold.
+   The independent macro gate must also pass (price above EMA(200) and
+   session VWAP for intraday; price above EMA(200) for daily candles), the
+   flow gate must find positive-strength OI buildup or a volume spike, and
+   no higher-timeframe EMA trend may conflict. A score is a weighted rule
+   result, not a probability. It returns a `BUY` decision at 22,150.
 3. **An option contract is chosen.** Since NIFTY is in the options
    watchlist, `OptionSelector` picks the at-the-money call for the
    nearest expiry: say `NIFTY-25DEC-22150-CE`, currently trading at

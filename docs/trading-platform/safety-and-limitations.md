@@ -125,3 +125,15 @@ detail. Key open items:
   based cooldown (`RiskPolicy.cooldown_seconds`) remains tied to real time.
   Paper sessions run in `python -m trading_system.main` and are configured
   through PostgreSQL settings managed by the separate dashboard process.
+- **Live exposure snapshot**: broker positions are refreshed during startup
+  and the recovery cycle, not for each market tick. If the last successful
+  snapshot is more than 30 seconds old, protective exits are withheld until
+  broker exposure can be refreshed. The health endpoint reports WebSocket
+  feed liveness separately from Kite REST authentication; operators should
+  verify tick delivery after reconnect.
+- **Daily equity score gates**: daily cash-equity scoring uses EMA(200) and
+  completed daily volume history; intraday VWAP is not used. OI confirmation
+  may be absent for cash equities, so volume-spike confirmation is required
+  in practice. Confirmation intervals at or below the primary interval are
+  ignored. These generic rules still require strategy-owner review and
+  empirical validation before live use.

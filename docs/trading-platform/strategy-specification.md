@@ -1,20 +1,20 @@
-# Trading Strategy Specification — PROPOSAL / TEMPLATE (NOT YET DEFINED)
+# Strategy Specification and Rule Template
 
-> **Status: AWAITING INPUT.** This document is a structured template, not an
-> implemented strategy. No section below has been filled in with real
-> trading rules. Nothing in `src/trading_system/strategy/` has been changed
-> based on this file — `NoOpStrategy` remains the active strategy
-> implementation until every section here is completed and reviewed.
+> **Status: OWNER SPECIFICATION AWAITING INPUT.** The configured runtime
+> currently defaults to `technical_scoring`, a generic, configurable
+> pattern-confluence implementation. This template is not its specification,
+> and the implementation has not been validated or approved for production.
+> `no_op` remains available to disable signal generation. Complete this
+> document to define and review the project's intended trading rules.
 >
-> This file exists because Phase 7A ("Actual Trading Strategy Specification
-> and Implementation") requires a complete, explicit strategy specification
-> before any entry/exit logic can be implemented. A repository-wide search
-> (`queries/`, source, tests, README, git history) found no strategy rules,
-> indicator thresholds, entry/exit conditions, or option-selection rules
-> anywhere — only the explicit instruction *"Do not invent a strategy"*
-> (see [the project-initialization spec](specs/00-project-initialization.md)).
-> Per the Phase 7A instructions, arbitrary rules must not be invented;
-> instead this template is provided for the project owner to complete.
+> This file remains a template because no owner-approved specification of
+> the intended trading strategy has been supplied. The repository does
+> contain a generic, configurable `technical_scoring` implementation and
+> instrument/risk workflows; those implementation defaults are not a
+> substitute for documented, reviewed trading rules. Do not infer strategy
+> approval or expected performance from the presence of that code. Complete
+> this template with the project owner's explicit rules before treating any
+> implementation as the intended production strategy.
 
 ## How to use this document
 
@@ -138,9 +138,9 @@ Under what conditions does an otherwise-valid setup become invalid before a sign
 - Date: `______`
 - Reviewed against `queries/00_project_initialization.md` and `queries/07a_phase7a.md`: `Yes / No`
 
-Once every section above is completed, re-run Phase 7A (or request the
-implementation directly) to replace `NoOpStrategy` with the specified
-rules using the existing Phase 7 framework (`MarketContext`,
-`StrategyEngine`, `SignalValidator`, `StrategyStateStore`,
-`DeduplicationStore`, `OptionChainService`) — no new framework code
-should be required, only a new `BaseStrategy` subclass and configuration.
+Once every section above is completed and approved, compare it with the
+current `technical_scoring` behavior before changing implementation. Use
+the existing Phase 7 framework (`MarketContext`, `StrategyEngine`,
+`SignalValidator`, `StrategyStateStore`, `DeduplicationStore`,
+`OptionChainService`) where it fits. A test-passing implementation is not
+evidence of strategy profitability or production approval.

@@ -152,12 +152,44 @@ still logged. Enabling it stores below-threshold evaluations in the Signals
 page audit table after the trading process restarts. Zero-contribution
 components are not stored or displayed.
 
-Completed candles are persisted for configured signal/gate instruments to
-support dashboard inspection and historical fallback. Option contracts
-subscribed only for open-order/position quotes still feed stop/target checks
-and pending-fill refreshes, but do not generate unused candles. Raw ticks are
-not persisted. Retention and partitioning are database operations; preserve
-candles needed by active backtests and audits.
+Completed 5-minute and higher candles are persisted for configured
+signal/gate instruments to support dashboard inspection and signal audits.
+One-minute candles remain in memory only. Duplicate candle inserts use one
+`ON CONFLICT DO NOTHING` statement. Option contracts subscribed only for
+open-order/position quotes still feed stop/target checks and pending-fill
+refreshes, but do not generate unused candles. Raw ticks are not persisted.
+
+### Database retention and maintenance
+
+After startup instrument synchronization, the algorithm removes candles for
+tokens that are neither current watchlist tokens nor active `technical_scoring`
+options gate futures. It then applies batched retention:
+
+| Data | Retention |
+| --- | --- |
+| 1-minute and other sub-5-minute candles | Not retained |
+| 5- to 29-minute candles | 60 days |
+| 30- to 1,439-minute candles | 180 days |
+| Daily candles | 730 days |
+| Strategy diagnostics | 30 days |
+| Consistent or reconciled runs with no detail records | 30 days |
+
+Live signals, orders, positions, trades, and execution attempts are not
+deleted. Cleanup runs in transactions of 5,000 rows. If both watchlists are
+empty, stale-token cleanup is skipped so historical candles are not removed
+accidentally. A maintenance failure is logged and does not block startup.
+
+Schedule the post-close command at 16:00 IST on trading days:
+
+```powershell
+C:\Victor\GROWW\trading_platform\.venv\Scripts\python.exe scripts\db_maintenance.py
+```
+
+Set Task Scheduler's **Start in** directory to
+`C:\Victor\GROWW\trading_platform`. Backtests use an isolated temporary
+database and fetch history from Kite, so production retention does not
+limit their date range. Do not run `VACUUM FULL` on production; autovacuum
+reclaims deleted rows without long exclusive locks.
 
 `technical_scoring` calculates classic pivots once from the previous
 completed 1440-minute session candle. It records `P`, `BC`/`TC`, `R1`-`R3`,

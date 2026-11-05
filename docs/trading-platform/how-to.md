@@ -305,8 +305,13 @@ python -m trading_system.main
 ```
 
 Paper sessions and runtime records are visible in the separately running
-dashboard. No real orders are placed in paper mode. The old `scripts/paper_trade.py` path is
-only a compatibility shim and accepts no session arguments.
+dashboard. Each start creates a new paper-session ID and fresh performance
+metrics; prior sessions remain available in session history. Before starting
+again, close any open paper positions and resolve pending orders from the
+previous session. The Overview and Metrics pages show the latest paper
+session separately from broker-account totals. No real orders are placed in
+paper mode. The old `scripts/paper_trade.py` path is only a compatibility
+shim and accepts no session arguments.
 
 ## How to go live (placing real orders) — read this first
 

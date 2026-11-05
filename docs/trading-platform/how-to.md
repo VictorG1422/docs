@@ -306,12 +306,16 @@ python -m trading_system.main
 
 Paper sessions and runtime records are visible in the separately running
 dashboard. Each start creates a new paper-session ID and fresh performance
-metrics; prior sessions remain available in session history. Before starting
-again, close any open paper positions and resolve pending orders from the
-previous session. The Overview and Metrics pages show the latest paper
-session separately from broker-account totals. No real orders are placed in
-paper mode. The old `scripts/paper_trade.py` path is only a compatibility
-shim and accepts no session arguments.
+metrics; prior sessions remain available in session history. On restart,
+confirmed open paper positions are carried into the new session, pending
+simulated orders are cancelled, and performance metrics are reset. Recovery
+requires a current price for every carried position; inconsistent or
+unresolved order state blocks startup for manual review. A renewable runtime
+lease prevents a second process from trading the same configured watchlist.
+The Overview and Metrics pages show the latest paper session separately from
+broker-account totals. No real orders are placed in paper mode. The old
+`scripts/paper_trade.py` path is only a compatibility shim and accepts no
+session arguments.
 
 ## How to go live (placing real orders) — read this first
 
@@ -338,10 +342,14 @@ This is deliberate: the system assumes paper trading unless you
   responsible for monitoring and manually closing any live position.
 
 With live mode selected but the trusted execution gate disabled, the
-runtime is monitor-only and does not submit orders. With all independent
-gates enabled, the configured strategy and watchlists run through the
-live risk/reconciliation pipeline. Launch only with an explicit
-understanding of the remaining limitations and operational risks.
+runtime is monitor-only and does not submit orders. Startup reconciliation
+checks existing broker orders and positions before live entries resume. If
+the broker state is unresolved, the runtime continues monitoring but keeps
+new entries disabled until the mismatch is resolved. With all independent
+gates enabled and reconciliation clear, the configured strategy and
+watchlists run through the live risk/reconciliation pipeline. Launch only
+with an explicit understanding of the remaining limitations and operational
+risks.
 
 ## How to change settings
 

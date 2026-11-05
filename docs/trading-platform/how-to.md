@@ -132,8 +132,11 @@ loaded in the page; limited or paginated tables do not fetch extra records.
   P/L, win ratio, failed/pending orders, and activity counts. Available
   account cash is fetched live from Kite and shown as unavailable if the
   broker balance cannot be retrieved.
-- **Metrics** (`/metrics`) — the complete set of account, activity, and
-  P/L metrics.
+- **Metrics** (`/metrics`) — activity and realized P/L for a selected date
+  range, with a separate daily breakdown for the To date and a current account
+  snapshot. The initial range is the first day of the current month through
+  today. Historical open position P/L is not reconstructed; unrealized P/L is
+  shown in the current account snapshot.
 - **Market holidays** (`/holidays`) — the cached NSE trading-holiday list,
   with dates, CM/FO segments, descriptions, and sync timestamps.
 - **Score history** (`/scores`) — normalized score snapshots stored separately from signals

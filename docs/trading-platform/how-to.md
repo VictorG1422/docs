@@ -151,7 +151,11 @@ loaded in the page; limited or paginated tables do not fetch extra records.
   and use its Add button. Remove entries from the selected-watchlist list at
   the bottom of the page. These are pending edits until you enter the
   dashboard admin token and select **Save watchlists**.
-- **Backtests** (`/backtests`) — the newest run is selected automatically;
+- **Backtests** (`/backtests`) — enter the dashboard admin token and select
+  **Run saved configuration** to queue a run from the saved backtest settings.
+  The run starts in the dashboard service without restarting or stopping the
+  paper/live trading runtime; the list refreshes while it is queued or running.
+  Only one backtest can run at a time. The newest run is selected automatically;
   choose a different run in the list below its audit to inspect that run.
   Inspect run metrics and each completed
   trade. Run details include equity, gross/net P&L, win/loss counts,

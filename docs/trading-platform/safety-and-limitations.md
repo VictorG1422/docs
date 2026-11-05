@@ -2,9 +2,10 @@
 
 ## Safety mechanisms
 
-- **One configured workflow runs per process**: PostgreSQL
-  `APPLICATION_MODE` selects `backtest`, `paper` (the default), or `live`.
-  Unsupported values are rejected instead of silently falling through.
+- **Trading runtime and backtests are separate**: PostgreSQL
+  `APPLICATION_MODE` selects the paper or live runtime. Backtests are
+  explicitly triggered from the dashboard and can run while that runtime
+  remains active. Unsupported mode values are rejected.
 - **Paper and backtest execution are simulated**: they can consume real
   market/historical data but never submit real broker orders.
 - **Live orders require independent safeguards**: the DB-selected
@@ -35,11 +36,12 @@
   operators can select one or more open paper/live position lots. Each
   submitted exit records `MANUAL_EXIT` and the targeted position ID.
   Backtest results are not live positions and cannot be manually exited.
-- **Separate process boundary**: the dashboard serves reads and protected
-  database configuration updates; the algorithm owns subscriptions and
-  execution. The detached dashboard does not submit orders or perform
-  manual exits. Invalid persisted runtime configuration prevents the
-  algorithm from starting while the dashboard remains available to correct it.
+- **Separate process boundary**: the dashboard serves reads, protected
+  configuration updates, and simulated backtest triggers; the algorithm owns
+  subscriptions and paper/live execution. The detached dashboard does not
+  submit live orders or perform manual exits. Invalid persisted runtime
+  configuration prevents the algorithm from starting while the dashboard
+  remains available to correct it.
 - **No secrets in logs**: `JsonFormatter` redacts known credential field
   names even if they end up in `extra=` fields; `ConfigurationError`
   messages only ever mention variable names, never values.

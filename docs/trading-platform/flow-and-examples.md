@@ -240,14 +240,15 @@ never heard of at all, always requires a human to look at it -- see
 
 ## 6. Worked example: running a backtest
 
-Configure `APPLICATION_MODE=backtest`, strategy, watchlist, instrument
-mode, dates, interval, and initial capital in the dashboard, then start
-`python -m trading_system.main`. The historical run executes once in the
-background while the dashboard remains available.
+Configure the strategy, watchlist, instrument mode, dates, interval, and
+initial capital in the dashboard. Open **Backtests**, enter the dashboard
+admin token, and select **Run saved configuration**. The dashboard queues the
+historical run without restarting or stopping the paper/live trading runtime.
 
 What happens when this runs:
 
-1. A brand-new, empty SQLite database and an in-memory Redis are created
+1. A `PENDING` run record is saved, then marked `RUNNING` by the dashboard
+   background task. A brand-new, empty SQLite database and an in-memory Redis are created
    just for this one run -- completely separate from your real
    PostgreSQL/Redis, so a backtest can never affect real data.
 2. Historical candles for both underlying instruments between the two

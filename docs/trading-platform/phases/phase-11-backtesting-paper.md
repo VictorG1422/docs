@@ -128,13 +128,17 @@ backtest configuration snapshot.
 
 Near-miss scores from 40 through 64 or -40 through -64 are persisted by
 default with nonzero component contributions, macro/flow gate results and
-reasons, and pivot context. The database-managed `Persist every scoring
+reasons, and pivot context. Confirmation-alignment vetoes are persisted at
+any score, including the candidate direction, conflicting EMA(9)/EMA(21)
+trend, and each higher timeframe that caused the veto. The dashboard's
+backtest scoring analysis shows these alongside the gate results. The
+database-managed `Persist every scoring
 evaluation` setting additionally records below-threshold evaluations for
 paper, live, and configured backtest workflows; it defaults off to limit
 database growth. Backtest diagnostics are copied into the durable run summary
 so the dashboard can show them after the per-run SQLite audit file is removed.
 Each scoring diagnostic also stores the evaluated candle's OHLC and displays
-it in the near-miss table; apply migration `0022` first. Older diagnostics
+it in the scoring analysis table; apply migration `0022` first. Older diagnostics
 have no OHLC values. The Trades table is a flat list of completed round trips,
 not grouped by instrument.
 

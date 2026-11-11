@@ -133,6 +133,10 @@ evaluation` setting additionally records below-threshold evaluations for
 paper, live, and configured backtest workflows; it defaults off to limit
 database growth. Backtest diagnostics are copied into the durable run summary
 so the dashboard can show them after the per-run SQLite audit file is removed.
+Each scoring diagnostic also stores the evaluated candle's OHLC and displays
+it in the near-miss table; apply migration `0022` first. Older diagnostics
+have no OHLC values. The Trades table is a flat list of completed round trips,
+not grouped by instrument.
 
 **Transaction costs (`backtest/costs.py`):** `TransactionCostModel` --
 every rate (brokerage, exchange charges, STT, GST, SEBI charges, stamp

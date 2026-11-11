@@ -132,8 +132,11 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     current session's first candle open, prior-session ATR(14), and only
     candles completed so far. The default 30-minute opening range must
     complete before a significant gap (at least `0.25 * ATR`) can confirm
-    continuation or fade; until then the scorer blocks entries and records
-    the gap-gate reason. When a session opens beyond a prior open/high/low
+    continuation or fade; continuation must close beyond the prior running
+    session high/low, updated only after each candle is evaluated, so a
+    lower-high rebound above the initial range is not mistaken for a fresh
+    breakout. Until continuation or gap failure is confirmed, the scorer
+    blocks entries and records the gap-gate reason. When a session opens beyond a prior open/high/low
     or CPR, those same-side prior-level bonuses are suppressed so a gap
     alone is not double-counted as a breakout. The opening range, gap
     threshold, and gap weight are editable in dashboard scoring settings.

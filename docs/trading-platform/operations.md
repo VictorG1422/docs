@@ -9,8 +9,10 @@ python -m trading_system.main
 
 `python -m trading_system.main` starts only the configured algorithm. It
 loads secrets and validated PostgreSQL settings, synchronizes required
-instruments, then runs backtest, paper, or live mode. It does not start an
-HTTP server. Runtime values are managed in PostgreSQL; there are no mode,
+instruments once per IST calendar day per exchange, then runs backtest,
+paper, or live mode. Migration `0021` stores each exchange's last successful
+sync date. The explicit `python scripts/download_instruments.py` command
+still forces a refresh. It does not start an HTTP server. Runtime values are managed in PostgreSQL; there are no mode,
 strategy, instrument, or date command-line arguments.
 Paper and live runtimes automatically begin graceful shutdown at or after
 15:30 IST, using the same cleanup path as Ctrl+C/SIGTERM. Backtests are not

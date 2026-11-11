@@ -100,9 +100,11 @@ before syncing these rows into an existing database.
 - **Nothing subscribes to a real instrument token yet.** `SubscriptionManager`
   and the WebSocket infrastructure exist, but which NIFTY/BANKNIFTY
   contracts to stream is a strategy decision left to Phase 5+.
-- **`sync_instruments()` is not called automatically at startup** -- it
-  is exposed as an explicit operation (e.g. for a scheduled job or
-  manual invocation) rather than run on every `Application.start()`.
+- Required `NSE` and `NFO` startup syncs run at most once per IST calendar
+  day per exchange. A successful full sync date is stored in
+  `instrument_sync_state`; `sync_instruments()` and
+  `scripts/download_instruments.py` remain explicit force-refresh paths.
+  Apply migration `0021` before starting this version.
 - **Testing**: `tests/unit/test_kite_client.py` and
   `test_kite_websocket.py` never hit the real Kite API -- the
   `kiteconnect.KiteConnect`/`KiteTicker` instances are replaced with

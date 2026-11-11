@@ -121,12 +121,25 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     `ema_trend_cross=16`, `star_reversal=20`,
     `three_candle_continuation=20`, `engulfing=15`, `hammer=12`,
     `shooting_star=12`, `trend_structure=12`, `macd_crossover=10`,
-    `rsi_extreme=10`, `bollinger_reversion=10`, `pivot_context=8`.
+    `rsi_extreme=10`, `bollinger_reversion=10`, `pivot_context=8`,
+    `gap_context=28`.
     Migration `0019` updates rows still equal previous shipped defaults;
     migration `0020` persists this explicitly requested weight set over
     earlier dashboard weight overrides and records each change in the
     settings audit table. Other settings, including score thresholds, are
     unchanged.
+  - **Gap context** uses the previous completed session's close, the
+    current session's first candle open, prior-session ATR(14), and only
+    candles completed so far. The default 30-minute opening range must
+    complete before a significant gap (at least `0.25 * ATR`) can confirm
+    continuation or fade; until then the scorer blocks entries and records
+    the gap-gate reason. When a session opens beyond a prior open/high/low
+    or CPR, those same-side prior-level bonuses are suppressed so a gap
+    alone is not double-counted as a breakout. The opening range, gap
+    threshold, and gap weight are editable in dashboard scoring settings.
+    This is a configurable filter, not a claim that gaps predict direction;
+    validate it across gap-up, gap-down, expiry, and ordinary sessions
+    before live use.
   - `trading_system/strategy/scoring.py::TechnicalScorer`/`ScoringConfig`
     -- combines every pattern match from the primary timeframe **and**
     every configured confirmation timeframe ("patterns should check in

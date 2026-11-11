@@ -47,6 +47,12 @@ Daily equity swing runs omit intraday-only windows. Redis-TTL-based
 cooldown (`RiskPolicy.cooldown_seconds`) remains real-time based and should
 be left unset for historical replay.
 
+Backtest daily trade limits count approved intents by their linked signal
+timestamp, not database insertion time. `RISK_MAX_DAILY_TRADES` therefore
+resets for each simulated session, including in multi-day runs. Emitted
+technical-scoring signal details include the current session's running
+high/low and the previous session's OHLC alongside CPR and pivot levels.
+
 **Isolation:** every backtest run gets its own ephemeral SQLite database
 (`data/backtests/{run_id}.sqlite`, created fresh via
 `Base.metadata.create_all`) and its own in-memory `fakeredis` instance --

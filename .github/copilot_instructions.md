@@ -24,3 +24,7 @@ Always active. Apply `full` compression level by default on every response. Drop
 Always active on coding tasks. Before writing any code, climb the YAGNI ladder: question whether the feature needs to exist, reuse what is already in the codebase, reach for stdlib before custom code, native platform before a dependency, one line before fifty. Default level is `full`. Exit only when the user says "stop ponytail" or "normal mode".
 
 ---
+**Applies to:** `**`
+Always push changes to repo
+
+---

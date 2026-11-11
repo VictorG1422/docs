@@ -77,6 +77,15 @@ intervals, and invalid OHLC; an invalid/duplicate/out-of-order candle is
 excluded (never corrected/fabricated) and reported as a
 `DataQualityWarning`, not silently dropped.
 
+For technical-scoring OPTIONS backtests, the FUT gate history is expanded
+from an initial five-day lookback until each gate has 400 completed
+pre-start candles, capped at 60 calendar days. Partial PostgreSQL history
+is supplemented from Kite, with local candles preferred for duplicate
+timestamps. EMA(200) needs at least 200 pre-start candles: below that, the
+run fails with the gate token and available count; 200-399 bars allow the
+run but add a limited-warmup warning. Warmup candles are seeded only before
+the requested start and are never replayed as trades.
+
 **Look-ahead-bias protection:** a signal generated from candle `i`'s
 close can only ever fill at candle `i+1`'s open (or later, for a
 limit/SL order) -- `BacktestExecutionAdapter` tracks the candle a request

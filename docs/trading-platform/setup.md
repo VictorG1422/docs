@@ -119,7 +119,7 @@ no AWS override for database-managed strategy or scoring values.
 | `RISK_STOP_LOSS_POINTS` | *(unset)* | Fixed rupee stop distance; only used when `RISK_STOP_LOSS_METHOD=POINTS`. |
 | `RISK_STOP_LOSS_CANDLE_INTERVAL_MINUTES` | `5` | Candle interval used for ATR when a signal doesn't specify its own timeframe. |
 | `RISK_TARGET_REWARD_RATIO` | `1.5` | Target = entry +/- (stop-loss distance * this ratio); empty/unset disables target calculation entirely. |
-| `RISK_TRAILING_EXITS_ENABLED` | `true` | Enable simulated trailing exits in paper/backtest. Live mode ignores this setting and retains existing fixed exits. |
+| `RISK_TRAILING_EXITS_ENABLED` | `true` | Enable trailing exits in paper, backtest, and live modes. Validate the settings in backtest/paper before live use. |
 | `RISK_TRAILING_STOP_ACTIVATION_R` | `1` | Favorable movement in initial risk units before the stop starts trailing. |
 | `RISK_TRAILING_STOP_DISTANCE_R` | `1` | Distance behind the best favorable traded-instrument price for the trailing stop. |
 | `RISK_TRAILING_TARGET_DISTANCE_R` | `0.5` | Once the fixed target is reached, trailing take-profit distance behind best price; it never falls below the initial target. |

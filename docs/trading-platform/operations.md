@@ -295,6 +295,11 @@ alembic revision --autogenerate -m "message"  # generate a migration from model 
 alembic downgrade -1           # roll back the last migration
 ```
 
+Migrations `0023` and `0024` add durable live trailing-exit state and its
+timestamped change history to `positions`. Apply `alembic upgrade head`
+before deploying this version; without them, live trailing-state updates
+cannot be persisted and the runtime will not arm a new trail.
+
 `alembic.ini` and `migrations/env.py` read the database URL from
 `Settings.postgres_dsn` so no separate DB URL configuration is needed.
 `migrations/env.py` sets `target_metadata = Base.metadata` (imported from

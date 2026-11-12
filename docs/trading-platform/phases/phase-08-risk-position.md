@@ -109,20 +109,22 @@ TradeIntent  --> PostgreSQL (risk_decisions, trade_intents)
   on the `TradeIntent`, `metadata["stop_loss_configured"] = False`) --
   every parameter remains fully configurable/overridable via environment
   variables, this is not a second, hidden configuration mechanism.
-- **Simulation trailing exits** (`RiskPolicy.trailing_exits_enabled`) are
-  enabled by default for paper/backtest settings and disabled in live mode.
+- **Trailing exits** (`RiskPolicy.trailing_exits_enabled`) are
+  enabled by default for paper/backtest/live settings.
   Once price reaches `1R` favorable, the stop ratchets behind the best
   favorable traded-instrument price by `1R` and never loosens. When the
   original fixed target is touched, paper/backtest arms a trailing
   take-profit `0.5R` behind the best favorable price, never below the
-  original target. Updated levels apply from the next completed candle;
-  this avoids using a candle's high to trigger a newly calculated stop
-  against that same candle's low. Configure with
+  original target. Live mode evaluates each tick and persists every new
+  trail level; paper/backtest updates from a completed candle and applies
+  that level from the next candle. Trade details record initial and final
+  protection levels, timestamped trail changes, and whether the initial or
+  trailing stop/target caused the exit. Configure with
   `RISK_TRAILING_EXITS_ENABLED`,
   `RISK_TRAILING_STOP_ACTIVATION_R`,
   `RISK_TRAILING_STOP_DISTANCE_R`, and
-  `RISK_TRAILING_TARGET_DISTANCE_R`. These are unvalidated hypotheses,
-  not a live-trading recommendation.
+  `RISK_TRAILING_TARGET_DISTANCE_R`. These rules require backtest and
+  paper validation before enabling in live settings.
 - `trading_system/risk/position_state.py::PositionLifecycleStatus`/
   `RiskPositionStateStore` -- lifecycle semantics (`NONE`/`PENDING`/
   `OPEN`/`CLOSING`/`CLOSED`) layered on top of the existing Phase 3

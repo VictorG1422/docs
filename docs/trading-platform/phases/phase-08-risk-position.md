@@ -12,7 +12,7 @@ Signal (Phase 7, status="RISK_CHECK_PENDING")
       │
       ▼
 RiskEngine.evaluate_signal()
-      │  DistributedLock (per-instrument, narrow, bounded)
+      │  DistributedLock (account-wide, bounded)
       ▼
 signal validation → market-data validation (staleness) → trading-window
 validation → existing-position validation → duplicate-signal validation
@@ -58,13 +58,15 @@ TradeIntent  --> PostgreSQL (risk_decisions, trade_intents)
   `AccountStateProvider` -- `available_capital`/`used_capital`/
   `available_margin` are **always `None`**: real broker-account
   reconciliation is explicitly Phase 10's job, so Phase 8 never fabricates
-  them. `PostgresAccountStateProvider` derives everything else from
-  durable PostgreSQL records: `current_exposure`/`unrealized_pnl_today`
-  from open `Position` rows, `realized_pnl_today` from `Trade` rows whose
-  `exit_time` falls on the current day, and `daily_trade_count` from
-  `RISK_APPROVED` `TradeIntent` rows created that day. Correct today even
-  though nothing populates `positions`/`trades` until Phase 9 executes an
-  order -- forward-compatible, not fabricated.
+  them. `PostgresAccountStateProvider` uses the IST trading day and derives
+  exposure/open positions from durable `Position` rows, realized P&L from
+  `Trade` rows plus closed positions not yet represented in that ledger,
+  and daily trades from `RISK_APPROVED` `TradeIntent` rows. Active entry
+  orders and approved, unsubmitted entry intents reserve position slots
+  until fills are reflected in positions. Backtests and paper sessions
+  overlay their in-memory `Portfolio` positions and closed-trade P&L so
+  simulated risk checks use simulated state rather than empty PostgreSQL
+  position/trade tables.
 - `trading_system/risk/position_sizer.py::PositionSizer` -- `Signal +
   RiskPolicy + AccountState + entry price (+ optional stop-loss) ->
   quantity`. Every calculation uses `Decimal`, never `float`. Quantity is
@@ -166,18 +168,20 @@ TradeIntent  --> PostgreSQL (risk_decisions, trade_intents)
   always available. `RiskDecisionRepository`/`TradeIntentRepository`
   (`storage/db/repositories.py`) follow the existing `BaseRepository`
   pattern; `TradeRepository.list_by_exit_date()` and
-  `TradeIntentRepository.count_approved_since()` back the
-  `AccountStateProvider` queries above.
+  `TradeIntentRepository.count_approved_on_signal_date()` back the
+  `AccountStateProvider` queries above. Daily boundaries use Asia/Kolkata
+  trading dates rather than UTC calendar dates.
 - **Redis usage (`storage/redis/risk_state.py::RiskRuntimeStateStore`)**:
   purely a fast, **non-authoritative** accelerator/cooldown store (atomic
   `INCR`+`EXPIRE` daily counters, `SET EX` cooldown markers) -- PostgreSQL
   (`AccountStateProvider`) remains authoritative for daily trade
   counts/P&L. A Redis failure here is never treated as "no risk state
   exists"; callers fall back to the PostgreSQL figures.
-- **Concurrency**: the per-instrument `DistributedLock` above is the
-  primary guard; the `DeduplicationStore` check additionally prevents the
-  same signal ID from ever being risk-evaluated twice, even across
-  process restarts.
+- **Concurrency**: the account-wide `DistributedLock` serializes risk
+  evaluations so separate instruments cannot simultaneously pass a
+  shared open-position/daily-loss limit from the same stale snapshot. The
+  `DeduplicationStore` additionally prevents the same signal ID from ever
+  being risk-evaluated twice, even across process restarts.
 - **Testing**: `tests/unit/test_risk_policy.py`, `test_position_sizer.py`
   (risk-based/capital-based sizing, lot-size flooring, zero-quantity
   rejection, exposure-room pre-check, Decimal precision), `test_account_state.py`

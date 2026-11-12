@@ -52,6 +52,12 @@ timestamp, not database insertion time. `RISK_MAX_DAILY_TRADES` therefore
 resets for each simulated session, including in multi-day runs. Emitted
 technical-scoring signal details include the current session's running
 high/low and the previous session's OHLC alongside CPR and pivot levels.
+Daily-loss and open-position checks also use the simulated `Portfolio`:
+closed simulated trades contribute realized P&L, and open positions plus
+pending entry intents/orders consume position slots. Paper sessions use the
+same portfolio-backed checks. Live risk checks use persisted positions,
+trades, and pending entry reservations. All risk evaluations are serialized
+account-wide, and daily accounting boundaries follow the IST trading day.
 
 **Isolation:** every backtest run gets its own ephemeral SQLite database
 (`data/backtests/{run_id}.sqlite`, created fresh via

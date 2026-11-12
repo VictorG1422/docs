@@ -168,21 +168,33 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     volume spike must have positive strength. The macro gate also blocks
     entries when normalized 20-period Bollinger bandwidth
     (`(upper-lower)/middle`) is below the 20th percentile of its prior 60
-    completed macro-timeframe bars; insufficient bandwidth history fails
-    closed. Period, lookback, and cutoff are dashboard-editable. Bandwidth
-    is a volatility-regime filter, not a direction or flow signal. Any gate
-    failure forces the score to zero and blocks a signal. These opening-
-    range and bandwidth defaults are hypotheses to compare across market
+    completed macro-timeframe bars **and** intraday price has crossed
+    session VWAP at least four times in the last 12 bars **and** either
+    ADX(14) is below 20 or 12-bar directional efficiency is at most 0.25.
+    Directional efficiency is absolute net close movement divided by total
+    absolute close-to-close movement. VWAP crosses count non-equal changes
+    in the close's side of cumulative session VWAP. For daily candles, VWAP
+    crosses are not applicable; low bandwidth must coincide with weak ADX
+    or low efficiency. Insufficient bandwidth history still fails closed;
+    missing chop-confirmation inputs are recorded but do not alone classify
+    the bar as choppy. These defaults are dashboard-editable. The scorer
+    persists the per-evaluation bandwidth, threshold, ADX, VWAP-cross count,
+    directional efficiency, and chop decision in the diagnostic `gate_inputs`
+    field; with the filter active, these rows are written for every completed
+    scoring evaluation, even when the score is not near threshold. This
+    increases diagnostic database writes while enabled. Any gate failure
+    forces the score to zero and blocks a signal. These opening-range and
+    multi-signal chop defaults are hypotheses to compare across market
     regimes and a holdout period, not evidence of profitability or approval
-    for live use. A
-    separate EMA-based trend filter on each confirmation timeframe can
+    for live use. A separate EMA-based trend filter on each confirmation timeframe can
     **veto** a signal outright when it conflicts with the higher-
     timeframe trend (`require_confirmation_alignment`, default `True`) --
     the widely-cited "trade with the higher-timeframe trend" rule,
-    independent of the score itself.
-    The no-gap opening-range pattern and bandwidth veto are enabled for
-    backtest and paper modes only; `application_mode=live` retains the
-    pre-change scoring behavior.
+    independent of the score itself. The multi-signal chop gate is enabled
+    in backtest, paper, and live modes. The no-gap opening-range pattern
+    remains disabled in live mode; `application_mode=live` only opts out of
+    that separate pattern. Apply database migration `0025` before
+    running the updated application so diagnostic rows can store `gate_inputs`.
   - `trading_system/strategy/technical_scoring_strategy.py::TechnicalScoringStrategy`
     -- the `BaseStrategy` implementation wrapping `TechnicalScorer`;
     returns `None` below threshold/when vetoed, otherwise a

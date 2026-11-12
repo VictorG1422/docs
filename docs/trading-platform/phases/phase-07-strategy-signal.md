@@ -165,34 +165,33 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     scoring or triggering, both entry gates must pass: price above both
     EMA(200) and session VWAP is bullish, below both is bearish, and mixed
     or equal alignment has no macro bias; additionally, OI buildup or a
-    volume spike must have positive strength. The macro gate also blocks
-    entries when normalized 20-period Bollinger bandwidth
-    (`(upper-lower)/middle`) is below the 20th percentile of its prior 60
-    completed macro-timeframe bars. The chop gate blocks when at least two
-    of these five signals are present: low bandwidth, ADX(14) below 20,
-    CHOP(14) above 61.8, at least four session-VWAP side changes in 12 bars,
-    or 12-bar directional efficiency at most 0.25.
-    Directional efficiency is absolute net close movement divided by total
-    absolute close-to-close movement. VWAP crosses count non-equal changes
-    in the close's side of cumulative session VWAP. For daily candles, VWAP
-    crosses are not applicable, leaving four signals. Insufficient
-    bandwidth history still fails closed;
-    missing chop-confirmation inputs are recorded but do not alone classify
-    the bar as choppy. These defaults are dashboard-editable. The scorer
-    persists the per-evaluation bandwidth, threshold, ADX, CHOP, VWAP-cross
-    count, directional efficiency, and chop decision in the diagnostic `gate_inputs`
-    field; with the filter active, these rows are written for every completed
+    volume spike must have positive strength. Before scoring, the regime
+    gate classifies the current completed bar as `CHOPPY`, `TREND`, or
+    `NEUTRAL`. It is `CHOPPY` only when both CHOP(14) is strictly above
+    61.8 and ADX(14) is strictly below 18. It permits scoring only when all
+    five trend conditions hold: CHOP(14) below 50, ADX(14) above 20, ADX
+    rises on each of the last three bar-to-bar transitions, 10-bar
+    directional efficiency above 0.30, and ATR(14) above the 20th
+    percentile of the prior 100 valid ATR readings on the same timeframe.
+    Efficiency is absolute net close movement divided by total absolute
+    close-to-close movement. ATR percentile counts prior readings less than
+    or equal to the current ATR. Values equal to a threshold do not pass.
+    All other conditions are `NEUTRAL` and block scoring; missing or
+    insufficient indicator history also fails closed. These thresholds
+    are dashboard-editable and included in backtest configuration
+    snapshots. The scorer records the regime, indicator values, trend-test
+    results, and blocking reasons in `gate_inputs` for each completed
     scoring evaluation, even when the score is not near threshold. This
     increases diagnostic database writes while enabled. Any gate failure
-    forces the score to zero and blocks a signal. These opening-range and
-    multi-signal chop defaults are hypotheses to compare across market
-    regimes and a holdout period, not evidence of profitability or approval
-    for live use. A separate EMA-based trend filter on each confirmation timeframe can
+    forces the score to zero and blocks a signal. These regime and
+    opening-range rules are hypotheses to compare across market regimes
+    and a holdout period, not evidence of profitability or approval for
+    live use. A separate EMA-based trend filter on each confirmation timeframe can
     **veto** a signal outright when it conflicts with the higher-
     timeframe trend (`require_confirmation_alignment`, default `True`) --
     the widely-cited "trade with the higher-timeframe trend" rule,
-    independent of the score itself. The multi-signal chop gate is enabled
-    in backtest, paper, and live modes. The no-gap opening-range pattern
+    independent of the score itself. The regime gate is enabled in
+    backtest, paper, and live modes. The no-gap opening-range pattern
     remains disabled in live mode; `application_mode=live` only opts out of
     that separate pattern. Apply database migration `0025` before
     running the updated application so diagnostic rows can store `gate_inputs`.

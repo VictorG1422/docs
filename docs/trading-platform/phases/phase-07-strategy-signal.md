@@ -130,7 +130,9 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     unchanged.
   - **Gap context** uses the previous completed session's close, the
     current session's first candle open, prior-session ATR(14), and only
-    candles completed so far. The default 30-minute opening range must
+    candles completed so far. It is scored only on significant gap-up or
+    gap-down sessions; ordinary sessions do not receive a `gap_context`
+    match. The default 30-minute opening range must
     complete before a significant gap (at least `0.25 * ATR`) can confirm
     continuation or fade; continuation must close beyond the prior running
     session high/low, updated only after each candle is evaluated, so a

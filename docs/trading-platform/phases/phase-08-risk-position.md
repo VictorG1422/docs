@@ -103,6 +103,10 @@ TradeIntent  --> PostgreSQL (risk_decisions, trade_intents)
   `RiskPolicy.min_risk_reward_ratio` -- `RiskPolicy.__post_init__`
   additionally refuses to construct a policy where
   `target_reward_ratio < min_risk_reward_ratio` at configuration time.
+  The dashboard settings editor preserves this constraint when lowering a
+  target: if the saved minimum is higher than the new target, the same
+  update lowers the minimum to match. Other configuration paths still
+  reject a target below the configured minimum.
   **Fully disable-able**: set `stop_loss_method`/`target_reward_ratio`
   to `None` (`RISK_STOP_LOSS_METHOD=`/`RISK_TARGET_REWARD_RATIO=` empty)
   to skip both entirely (`SKIPPED` checks, `stop_loss=None`/`target=None`

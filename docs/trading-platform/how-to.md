@@ -380,6 +380,12 @@ trading process for them to take effect; settings are not hot-reloaded.
 The dashboard admin token comes from AWS Secrets Manager and is not
 stored in PostgreSQL.
 
+When you lower **Target reward ratio** below the saved **Minimum
+risk/reward** in Trading & risk settings, the dashboard lowers the minimum
+to the same value in that save. This keeps the target from being rejected
+by a higher minimum; to retain a higher minimum, keep the target at least
+as high as that minimum.
+
 ### Settings you'll most commonly want to change
 
 | What you want to do | Setting name | Example value |

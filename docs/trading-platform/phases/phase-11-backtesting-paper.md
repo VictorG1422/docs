@@ -115,6 +115,15 @@ implement the existing Phase 9 `BrokerOrderAdapter` interface and are
 handed to the real `OrderExecutionEngine` -- neither ever calls
 `KiteBrokerAdapter`/`Broker.place_order`.
 
+Paper/backtest positions also use the configured trailing-exit overlay:
+the stop starts ratcheting after `1R` favorable movement, at `1R` behind
+the best favorable price; when the initial fixed target is reached, a
+trailing take-profit arms `0.5R` behind the best price and cannot fall
+below the original target. Levels updated from a completed candle only
+apply on the next candle, avoiding same-bar look-ahead. The state survives
+paper-session restart. Live mode retains its existing fixed stop/target
+behavior; this feature does not place or authorize live orders.
+
 Configured OPTIONS backtests use 75 basis points (0.75%) of adverse
 premium slippage with the next-bar-open fill rule. EQUITY backtests default
 to zero slippage; paper execution is unchanged. The durable run

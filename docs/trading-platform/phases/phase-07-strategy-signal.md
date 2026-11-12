@@ -202,8 +202,15 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     returns `None` below threshold/when vetoed, otherwise a
     `StrategyDecision` whose `indicator_snapshot` records the total
     score, every matched pattern (name/direction/strength/timeframe),
-    and whether a confirmation-timeframe veto applied -- fully
-    auditable. Slots into the existing framework unchanged:
+    calculated indicator values for the primary, confirmation, and
+    optional regime-reference candles, plus the regime-gate inputs and
+    conditions, prior-session levels, and whether a confirmation-timeframe
+    veto applied. Signal and linked order audit details expose these
+    snapshots for visual cross-checking. They include EMA(9/21/200), RSI(14),
+    MACD(12/26/9), Bollinger(20, 2), session VWAP, ATR/ADX/CHOP, volume and
+    open-interest changes; periods used by the regime gate are configurable.
+    These snapshots make each emitted signal auditable. The strategy slots
+    into the existing framework unchanged:
     `StrategyEngine` still owns signal identity/dedup/cooldown/
     validation/persistence.
   - Every scorer evaluation emits a structured log. Scores from 40 through

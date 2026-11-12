@@ -122,7 +122,7 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     `three_candle_continuation=20`, `engulfing=15`, `hammer=12`,
     `shooting_star=12`, `trend_structure=12`, `macd_crossover=10`,
     `rsi_extreme=10`, `bollinger_reversion=10`, `pivot_context=8`,
-    `gap_context=28`.
+    `gap_context=28`, `opening_range_breakout=18`.
     Migration `0019` updates rows still equal previous shipped defaults;
     migration `0020` persists this explicitly requested weight set over
     earlier dashboard weight overrides and records each change in the
@@ -143,6 +143,14 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     This is a configurable filter, not a claim that gaps predict direction;
     validate it across gap-up, gap-down, expiry, and ordinary sessions
     before live use.
+  - **No-gap opening-range breakout** applies when previous-session close
+    and ATR are available and the session gap is below the significant-gap
+    threshold. After the same opening range completes, a completed candle
+    must close above its high (BUY) or below its low (SELL); repeated closes
+    beyond the range do not re-trigger the pattern. It contributes
+    `opening_range_breakout=18`, below `gap_context=28`, and still requires
+    the existing score threshold and entry gates. Missing gap/ATR context
+    does not qualify as a confirmed no-gap setup.
   - `trading_system/strategy/scoring.py::TechnicalScorer`/`ScoringConfig`
     -- combines every pattern match from the primary timeframe **and**
     every configured confirmation timeframe ("patterns should check in
@@ -157,8 +165,16 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     scoring or triggering, both entry gates must pass: price above both
     EMA(200) and session VWAP is bullish, below both is bearish, and mixed
     or equal alignment has no macro bias; additionally, OI buildup or a
-    volume spike must have positive strength. Gate failure forces the score
-    to zero and blocks a signal. A
+    volume spike must have positive strength. The macro gate also blocks
+    entries when normalized 20-period Bollinger bandwidth
+    (`(upper-lower)/middle`) is below the 20th percentile of its prior 60
+    completed macro-timeframe bars; insufficient bandwidth history fails
+    closed. Period, lookback, and cutoff are dashboard-editable. Bandwidth
+    is a volatility-regime filter, not a direction or flow signal. Any gate
+    failure forces the score to zero and blocks a signal. These opening-
+    range and bandwidth defaults are hypotheses to compare across market
+    regimes and a holdout period, not evidence of profitability or approval
+    for live use. A
     separate EMA-based trend filter on each confirmation timeframe can
     **veto** a signal outright when it conflicts with the higher-
     timeframe trend (`require_confirmation_alignment`, default `True`)

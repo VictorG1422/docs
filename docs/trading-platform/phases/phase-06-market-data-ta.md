@@ -99,17 +99,15 @@ Kite WebSocket -> TickProcessor -> MarketState (Phase 4, unchanged)
 **Technical indicators (pure functions, no strategy logic):**
 
 - `market_data/indicators.py` implements SMA, EMA, RSI (Wilder's
-  smoothing), MACD (+ signal + histogram), ATR, VWAP, and Bollinger
-  Bands, all hand-written (no third-party TA dependency) and operating
+  smoothing), MACD (+ signal + histogram), ATR, ADX, Choppiness Index
+  (CHOP), VWAP, and Bollinger Bands using Pandas TA Classic and operating
   on a `list[Candle]` (oldest-to-newest, typically
   `CandleAggregator.get_completed_candles()`). Every function returns
   `None` (never raises, never fabricates a value) when there isn't
   enough history -- insufficient data during warm-up is an expected
-  condition, not an error. All arithmetic uses `Decimal` throughout,
-  including `Decimal.sqrt()` for Bollinger Bands' standard deviation, so
-  no candle value is ever coerced through binary `float`. These
-  functions never decide entry/exit -- Phase 7 consumes their output to
-  make that decision.
+  condition, not an error. Values are converted to `Decimal` at the
+  indicator API boundary. These functions never decide entry/exit -- Phase
+  7 consumes their output to make that decision.
 
 **PostgreSQL vs Redis responsibilities (unchanged split, extended):**
 

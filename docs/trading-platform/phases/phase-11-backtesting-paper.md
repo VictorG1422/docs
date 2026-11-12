@@ -109,6 +109,15 @@ at the end of the run, never fabricated as filled. LIMIT/SL orders fill
 only once a later candle's high/low actually reaches the limit/trigger
 price ("touch" rule), at the limit price itself, never better. No
 partial fills are modeled (no order-book depth data exists).
+Backtest entry stop/target levels are shifted by the difference between
+the signal reference price and the simulated fill, preserving their
+approved distance. Backtest stop and trailing-stop exits fill at their
+stop level even when a candle opens beyond it, without additional exit
+slippage; this intentionally optimistic assumption caps gross price loss
+at the stop distance. Configured transaction costs are separate and can
+make net loss exceed that gross price-risk amount. Paper execution
+continues to model gaps and adverse slippage; neither paper nor live stops
+guarantee a maximum realized loss.
 `PaperExecutionAdapter` uses the same slippage model against the current
 real-time last-traded price instead of "next bar". Both adapters
 implement the existing Phase 9 `BrokerOrderAdapter` interface and are

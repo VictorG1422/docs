@@ -168,18 +168,19 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     volume spike must have positive strength. The macro gate also blocks
     entries when normalized 20-period Bollinger bandwidth
     (`(upper-lower)/middle`) is below the 20th percentile of its prior 60
-    completed macro-timeframe bars **and** intraday price has crossed
-    session VWAP at least four times in the last 12 bars **and** either
-    ADX(14) is below 20 or 12-bar directional efficiency is at most 0.25.
+    completed macro-timeframe bars. The chop gate blocks when at least two
+    of these five signals are present: low bandwidth, ADX(14) below 20,
+    CHOP(14) above 61.8, at least four session-VWAP side changes in 12 bars,
+    or 12-bar directional efficiency at most 0.25.
     Directional efficiency is absolute net close movement divided by total
     absolute close-to-close movement. VWAP crosses count non-equal changes
     in the close's side of cumulative session VWAP. For daily candles, VWAP
-    crosses are not applicable; low bandwidth must coincide with weak ADX
-    or low efficiency. Insufficient bandwidth history still fails closed;
+    crosses are not applicable, leaving four signals. Insufficient
+    bandwidth history still fails closed;
     missing chop-confirmation inputs are recorded but do not alone classify
     the bar as choppy. These defaults are dashboard-editable. The scorer
-    persists the per-evaluation bandwidth, threshold, ADX, VWAP-cross count,
-    directional efficiency, and chop decision in the diagnostic `gate_inputs`
+    persists the per-evaluation bandwidth, threshold, ADX, CHOP, VWAP-cross
+    count, directional efficiency, and chop decision in the diagnostic `gate_inputs`
     field; with the filter active, these rows are written for every completed
     scoring evaluation, even when the score is not near threshold. This
     increases diagnostic database writes while enabled. Any gate failure

@@ -127,6 +127,11 @@ settings. Use the shared sidebar to open independent, bookmarkable pages:
 Use **Export Excel** in the toolbar to download all non-empty tables on the
 current page as a multi-sheet `.xlsx` workbook. It includes rows already
 loaded in the page; limited or paginated tables do not fetch extra records.
+On an individual backtest detail page, export instead fetches the complete
+run detail and writes separate sheets for summary metrics, configuration,
+scoring diagnostics, signal/order audit, trades, data-quality warnings, and
+errors. Nested component, risk-check, and trailing-exit details are retained
+in the exported cells even when their page rows are collapsed.
 
 - **Dashboard** (`/`) — filled trades, open positions, realized and unrealized
   P/L, win ratio, failed/pending orders, and activity counts. Available

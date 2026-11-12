@@ -177,9 +177,12 @@ Signal --> SignalRepository (PostgreSQL, status="RISK_CHECK_PENDING")
     for live use. A
     separate EMA-based trend filter on each confirmation timeframe can
     **veto** a signal outright when it conflicts with the higher-
-    timeframe trend (`require_confirmation_alignment`, default `True`)
-    -- the widely-cited "trade with the higher-timeframe trend" rule,
+    timeframe trend (`require_confirmation_alignment`, default `True`) --
+    the widely-cited "trade with the higher-timeframe trend" rule,
     independent of the score itself.
+    The no-gap opening-range pattern and bandwidth veto are enabled for
+    backtest and paper modes only; `application_mode=live` retains the
+    pre-change scoring behavior.
   - `trading_system/strategy/technical_scoring_strategy.py::TechnicalScoringStrategy`
     -- the `BaseStrategy` implementation wrapping `TechnicalScorer`;
     returns `None` below threshold/when vetoed, otherwise a

@@ -1,283 +1,357 @@
-# Flow & Worked Examples
+# Flow, Strategy Logic & Diagrams
 
 > **New to this project? Start here.** This page explains, in plain
-> language, what happens when the application runs, how a tick turns
-> into a trade, and walks through four realistic scenarios with concrete
-> numbers. The [Architecture page](architecture.md) and the
+> language, what happens when the application runs, how the two built-in
+> strategies decide to buy or sell, how a signal turns into (or is
+> refused) a trade, and walks through concrete worked examples. The
+> [Architecture page](architecture.md) and the
 > [Module Reference](module-reference.md) go deeper into *why* each piece
-> exists; this page focuses on *what actually happens, in order*.
+> exists; this page focuses on *what actually happens, in order*, with
+> diagrams.
 
-## 1. The big picture
+## 1. The process never exits because the market is closed
 
-At the highest level, each trading process follows this sequence:
+As of this project's most recent upgrade round, the process has exactly
+two startup modes — `APP_MODE=paper` or `APP_MODE=live` (there is no
+longer a "backtest" startup mode; backtests are an on-demand job you
+trigger from the dashboard against a *running* paper/live process — see
+section 6). Whichever mode you start in, the app runs a small state
+machine for the rest of its life and never shuts itself down just because
+NSE is closed:
 
-1. **Load configuration** -- read bootstrap/local settings and only the
-   agreed credential/infrastructure allow-list from AWS Secrets Manager.
-   Watchlists, risk, and scoring settings remain database-managed.
-2. **Refresh instrument data** -- fetch NSE and NFO from Kite and upsert
-   both into PostgreSQL by instrument token. The algorithm process starts
-   the selected workflow only after required synchronization.
-3. **Load trading settings and select instruments** -- use token IDs from
-   database watchlists and resolve their names/metadata from the refreshed
-   instrument master.
-4. **Watch and analyze the market** -- receive ticks for the signal
-   instrument and build candles for the configured strategy/timeframes.
-5. **Check controls, risk, and trade** -- the shared order-entry pause is
-   checked before signal evaluation and again at the execution boundary.
-   Approved entries proceed to simulated fills in backtest/paper or separately
-   gated broker submission in live mode. Protective exits bypass the pause;
-   manual exits require an in-process runtime and are unavailable from the
-   detached dashboard.
-6. **Shut down cleanly** -- on `Ctrl+C` or a termination signal, stop
-   subscriptions, persist session state, and close resources.
+```mermaid
+stateDiagram-v2
+    [*] --> STARTING
+    STARTING --> WAITING_FOR_MARKET: market closed
+    STARTING --> WARMING_UP: market open
+    WAITING_FOR_MARKET --> WARMING_UP: market opens
+    WARMING_UP --> RUNNING: history loaded, runtime started
+    RUNNING --> MARKET_CLOSED: market closes
+    MARKET_CLOSED --> WAITING_FOR_MARKET: next poll
+    WAITING_FOR_MARKET --> ERROR_RETRY: unexpected error
+    RUNNING --> ERROR_RETRY: unexpected error
+    ERROR_RETRY --> WAITING_FOR_MARKET: next poll
+    ERROR_RETRY --> RUNNING: next poll, market open
+```
 
-`APPLICATION_MODE=paper` is the default. Start `python -m dashboard.main`
-for the dashboard and `python -m trading_system.main` separately for the
-database-selected workflow. Both use the shared PostgreSQL configuration.
-The detached dashboard does not submit orders or perform manual exits.
-Live order execution remains separately gated; selecting live mode alone
-never authorizes real orders.
+Starting the app on a Sunday (or any time outside 09:15-15:30 IST, or on
+an NSE holiday) logs a single line explaining why the market is closed and
+when it next opens, then the process sits in `WAITING_FOR_MARKET` — the
+dashboard and its API stay fully available the whole time. A background
+supervisor thread polls every `MARKET_SUPERVISOR_POLL_SECONDS` (default
+15s) and logs a heartbeat every `HEARTBEAT_INTERVAL_SECONDS` (default
+1800s) while waiting, so you can tell the process is alive without the
+logs being spammed. The moment the market opens, it warms up (loads the
+historical candles the slowest indicator needs) and starts evaluating on
+the next fully-completed candle — never a partially-formed one. At close,
+it stops the paper/live runtime and goes back to waiting for the next
+session. Check the live state at any time with:
 
-### Signal source and traded instrument
+```
+GET /api/status
+```
 
-Watchlists identify the **signal source**, using synchronized underlying
-EQ/index instrument tokens:
-
-- **Options watchlist:** strategy evaluates the selected underlying EQ or
-  index candles; a BUY/SELL decision selects and trades the corresponding
-  CE/PE contract. The contract's own market price, lot size, stop, and
-  target are used for option risk and order calculations. Saving the
-  watchlist requires synchronized CE and PE contracts for a common
-  eligible expiry; a call and put from different expiries do not satisfy
-  this validation.
-- **Equity watchlist:** strategy evaluates the selected tradable cash EQ
-  and orders that same EQ. Risk levels derive from that equity's price.
-
-The dashboard displays instrument labels for people, but PostgreSQL stores
-the underlying token IDs. AWS Secrets Manager does not override these
-database-managed watchlists or score settings.
-
-The dashboard's **Pause new entries** control applies to configured backtest,
-paper, and live execution. It does not liquidate positions or block exits.
-Operators can select one or more open paper/live position lots for a manual
-exit; each exit is audited with reason `MANUAL_EXIT`. Backtest results are
-historical and cannot be manually exited.
+which returns `mode`, `state`, `market_open`, `next_open`,
+`reason_closed`, and `last_error` — see [How-To](how-to.md) for a worked
+example of reading this.
 
 ## 2. The trading pipeline, stage by stage
 
-This is the path a single price update takes, from the exchange to a
-(possible) order, and back out again as a position:
+This is the path a single completed candle takes, from the market data
+layer to a (possible) order, and back out again as a position:
 
 ```mermaid
 flowchart TD
     A[Kite WebSocket: raw price tick] --> B[TickProcessor: clean & validate]
     B --> C[MarketState: latest price per instrument]
     B --> D[CandleAggregator: build 1m / 5m / 15m candles]
-    D -->|candle closes| E[StrategyEngine: ask the strategy a question]
-    E -->|BUY or SELL| F[RiskEngine: is this trade allowed?]
-    F -->|approved: TradeIntent| G[OrderExecutionEngine: final entry-pause and execution gates]
-    G --> H{APPLICATION_MODE}
-    H -->|backtest| I[BacktestExecutionAdapter: simulated next-candle fills]
-    H -->|paper| J[PaperExecutionAdapter: simulated market-price fills]
-    H -->|live + independent safeguards| K[KiteBrokerAdapter: broker order]
-    I --> L[Portfolio: per-entry lots]
-    J --> M[Portfolio: per-entry lots]
-    K --> N[PostgreSQL position lots]
-    N --> O[ReconciliationEngine: compare lots with broker net exposure]
+    D -->|candle closes| E{Strategy: v1_score or v2_setup?}
+    E -->|v1_score| F1[TechnicalScorer: weighted pattern confluence]
+    E -->|v2_setup| F2[Regime state + Triggers T1-T3 + Filters F1-F5]
+    F1 -->|BUY or SELL| G[RiskEngine: ordered gauntlet of checks]
+    F2 -->|BUY or SELL| G
+    G -->|approved: TradeIntent| H[OrderExecutionEngine: entry-pause + execution gates]
+    H --> I{APP_MODE}
+    I -->|paper| J[PaperExecutionAdapter: simulated fill]
+    I -->|live + independent safeguards| K[KiteBrokerAdapter: real broker order]
+    J --> L[Portfolio: per-entry lots]
+    K --> M[PostgreSQL position lots]
+    M --> N[ReconciliationEngine: compare lots with broker net exposure]
 ```
 
-In plain words, stage by stage:
-
-| # | Stage | What it does, in one sentence | Where in the code |
-| - | ----- | ------------------------------ | ------------------ |
-| 1 | Receive | The WebSocket client receives a raw tick from Kite. | `broker/websocket.py::KiteWebSocketClient` |
-| 2 | Clean | Obviously broken data (negative price, impossible candle shape) is thrown away before it can corrupt anything downstream. | `market_data/tick_processor.py::TickProcessor` |
-| 3 | Remember | The latest price of every instrument is kept in memory and in Redis, so any other part of the app can ask "what's the current price?". | `market_data/tick_processor.py::MarketState` |
-| 4 | Build candles | Ticks are grouped into fixed time buckets (e.g. every 5 minutes) to form OHLC candles. | `market_data/candle_aggregator.py::CandleAggregator` |
-| 5 | Ask the strategy | The moment a candle closes, the configured strategy looks at recent candles and indicators and decides: buy, sell, or do nothing. | `strategy/strategy_engine.py::StrategyEngine` |
-| 6 | Pick the option contract | If the strategy trades options, the underlying's BUY/SELL view is translated into a specific CE/PE contract (e.g. "buy the at-the-money call"). | `strategy/option_selector.py::OptionSelector` |
-| 7 | Check the risk | Every proposed trade is checked against configured limits and duplicate rules before anything is sized. Same-signal repeats are deduplicated; distinct index CE/PE signals may add separate lots, while an open EQ position blocks another EQ entry. | `risk/risk_engine.py::RiskEngine` |
-| 8 | Size the trade | If approved, the exact quantity (in whole lots) is calculated from your risk budget and the stop-loss distance. | `risk/position_sizer.py::PositionSizer` |
-| 9 | Send the order | The execution engine rechecks the shared entry pause; mode-specific adapters simulate fills in backtest/paper, while live submission requires independent safeguards. | `execution/order_execution_engine.py::OrderExecutionEngine` |
-| 10 | Track the position | Backtest/paper portfolios retain one lot per entry; live PostgreSQL lots retain entry linkage and individual protective levels. | `backtest/portfolio.py::Portfolio`, `execution/live_trading_runtime.py::LiveTradingRuntime` |
-| 11 | Double-check later | Reconciliation compares persisted live lots with the broker's net per-instrument exposure and flags unsafe mismatches for manual action. | `reconciliation/position_reconciler.py::PositionReconciler` |
-
-A few rules hold true at every single stage above, and are worth
-remembering before reading the worked examples:
+A few rules hold true at every stage:
 
 - **Nothing skips a stage.** A signal can't become an order without
-  passing through the risk engine first; there is no shortcut path.
+  passing through the risk engine first.
 - **"No" is always a valid answer**, at every stage. Most candles produce
   no signal; most signals that *are* produced are expected to pass risk
   checks, but a rejection is a normal, logged outcome, not an error.
-- **Paper mode is the default.** A paper session still requires explicit
-  strategy/instrument selection; live order submission additionally
-  requires its separate execution gate.
+- **A signal only ever uses bars completed before it fired.** No rule,
+  trigger, filter, or indicator is allowed to look at the candle it's
+  about to fill on — it fills at the *next* bar's open (or later, under a
+  conditional entry mode — see section 5).
 
-## 3. Worked example: a trade that goes through
+## 3. How `v1_score` decides to trade (the original strategy)
 
-Everything below uses made-up, round numbers to keep the arithmetic easy
-to follow -- it's an illustration of the *logic*, not a transcript of a
-real run.
+`v1_score` scores every pattern/indicator match (candlestick patterns,
+RSI/MACD/EMA-cross/Bollinger/VWAP, gap context, opening-range breakout,
+pivot context, prior-day levels, OI buildup, volume spikes) on a
+`-100..100` scale. Patterns are weighted above pure indicators by
+default; the exact same pattern set is also evaluated on every configured
+confirmation timeframe, at a reduced weight. A `BUY` fires once the total
+score reaches the configured buy threshold (default 50); `SELL` the
+mirror image. Two things can still veto a directionally-qualifying score:
 
-**Setup:** select the synchronized NIFTY 50 EQ instrument in the options
-watchlist (token `256265` in the sample instrument master), a 5-minute strategy, ATM call/put
-buying only, `RISK_MAX_RISK_PER_TRADE=4000` (rupees), ATR-based stop-loss
-with a 1.5x multiplier, 1.5x reward:risk target, NIFTY lot size 75.
+- **The regime/macro gate.** Price, EMA(200), and session VWAP must agree
+  on direction, and the market must be in a `TREND` regime (not choppy) —
+  see section 4 for what "regime" means; `v1_score` always used this gate,
+  it's just defined in the same shared module now.
+- **Higher-timeframe conflict.** If any configured confirmation timeframe's
+  own EMA9/21 trend disagrees with the proposed direction, the signal is
+  vetoed outright.
 
-1. **A candle closes.** At 10:05 AM, the 5-minute NIFTY index candle
-   completes: open 22,110, high 22,160, low 22,100, close 22,150.
-2. **The strategy fires.** For `technical_scoring`, assume completed-candle
-   pattern matches produce a weighted score at or above the BUY threshold.
-   The independent macro gate must also pass (price above EMA(200) and
-   session VWAP for intraday; price above EMA(200) for daily candles), the
-   flow gate must find positive-strength OI buildup or a volume spike, and
-   no higher-timeframe EMA trend may conflict. A score is a weighted rule
-   result, not a probability. It returns a `BUY` decision at 22,150.
-3. **An option contract is chosen.** Since NIFTY is in the options
-   watchlist, `OptionSelector` picks the at-the-money call for the
-   nearest expiry: say `NIFTY-25DEC-22150-CE`, currently trading at
-   ₹142.50. The signal's price becomes ₹142.50 (the option's own price,
-   never the index's).
-4. **The signal is validated and saved** as `RISK_CHECK_PENDING` --
-   instrument exists, market data is fresh, price is positive: all pass.
-5. **The risk engine runs its checklist:**
-   - Market data fresh? **Yes.**
-   - Inside the allowed trading window, and not within the first/last 15
-     minutes of the session? **Yes** (it's 10:05, market opened at 09:15).
-   - Already a NIFTY options position open? **No** -- clear to proceed.
-   - Same signal already processed, or still in cooldown? **No.**
-   - Daily loss limit / daily trade count / max open positions /
-     exposure room? **All within limits.**
-   - **Stop-loss**: 14-period ATR on the option's own candles comes out
-     to ₹18; distance = 18 × 1.5 = **₹27**, so stop-loss = 142.50 − 27 =
-     **₹115.50**.
-   - **Target**: 1.5× the stop-loss distance = 1.5 × 27 = ₹40.50, so
-     target = 142.50 + 40.50 = **₹183.00**.
-   - **Position size**: budget ₹4,000 ÷ ₹27 risk-per-unit ≈ 148 units,
-     floored to the nearest whole lot of 75 → **75 units (1 lot)**.
-   - **Capital required**: 75 × 142.50 = **₹10,687.50**.
-   - Every check passed → **`RiskDecision: APPROVED`**, and a
-     `TradeIntent` is saved with quantity 75, stop-loss 115.50, target
-     183.00.
-6. **The order is submitted.** In paper mode, `PaperExecutionAdapter`
-   simulates an instant fill at ₹142.50 -- no real money moves, nothing
-   reaches Kite. In live mode (only if `ORDER_EXECUTION_ENABLED=true`,
-   `APP_ENV=production`, and `APPLICATION_MODE=live` are *all* set), the same
-   `TradeIntent` would instead go to `KiteBrokerAdapter`, which places a
-   real market order and records the broker's order ID.
-7. **The position opens.** The configured runtime records an entry-linked
-   lot: 75 units of `NIFTY-25DEC-22150-CE`, entry ₹142.50. Distinct,
-   separately deduplicated index signals may create additional lots in the
-   same contract; each lot retains its own stop, target, and exit identity.
-8. **What happens next?** The live runtime monitors ticks for this
-   broker-confirmed position and submits a protective exit through the
-   Phase 9 execution gate when its stop-loss or target is reached. On a
-   disconnected/stale tick feed it cannot react until market data resumes.
-   In paper/backtest mode the corresponding simulated position is checked
-   against the traded instrument's candle prices; no real order is placed.
+`v1_score` is deliberately unchanged by the most recent upgrade round —
+every output is byte-identical to before, so a strategy you already
+validated keeps behaving exactly the same way.
 
-To stop new entries, an operator can pause them in the dashboard without
-closing this position. A paper/live operator can then choose this lot and
-submit a manual exit; its persisted intent records `MANUAL_EXIT`. Selecting
-multiple lots creates individually auditable exits.
+## 4. How `v2_setup` decides to trade (the newer strategy)
 
-## 4. Worked example: a trade that gets rejected
+`v2_setup` throws out the weighted score entirely — **there is no score
+threshold anywhere in this path.** Instead it's a regime-gated trigger
+system, evaluated fresh on every completed candle:
 
-Same candle, same BUY decision from the strategy -- but suppose the
+```mermaid
+flowchart TD
+    A[Completed candle] --> B{Regime state}
+    B -->|CHOP or NEUTRAL| X[No signal]
+    B -->|TREND| C{Any trigger fires?}
+    B -->|TREND_AGING, action=block| X
+    B -->|TREND_AGING, action=half| C
+    C -->|No| X
+    C -->|T1 ORB / T2 Gap / T3 VWAP pullback| D{All enabled filters pass?}
+    D -->|F1 Flow fails| X
+    D -->|F2 HTF conflict| X
+    D -->|F3 Exhaustion| X
+    D -->|F4 Wrong time of day| X
+    D -->|F5 Counter-trend, no confirmation| X
+    D -->|All pass| E[BUY or SELL signal]
+```
+
+**Regime** is one of four states, recomputed every candle from ADX,
+choppiness index, directional efficiency, and an ATR percentile:
+
+- **TREND** — ADX is rising and above its minimum, choppiness is low,
+  directional efficiency and ATR percentile both clear their floors.
+  Entries are allowed.
+- **TREND_AGING** — still technically a TREND, but showing age: the day's
+  running price extreme in the trade direction is old (default >60
+  minutes), or price has crossed VWAP too many times today (default ≥2),
+  or ADX has dropped meaningfully off its peak-so-far. Depending on the
+  configured `aging_action`, entries here are either **blocked** or
+  allowed at **half size**.
+- **CHOP** — high choppiness and weak ADX together. No entries.
+- **NEUTRAL** — none of the above conditions are clearly met (or data is
+  insufficient). No entries, same as CHOP.
+
+**Triggers** (an entry needs at least one to fire):
+
+- **T1 — Opening-range breakout.** A close beyond the first N minutes'
+  high/low (default 15 minutes).
+- **T2 — Gap resolution.** After a significant overnight gap, either a
+  close beyond the prior running extreme (continuation) or a confirmed
+  fade back through the open — never a blind entry on the gap bar itself.
+- **T3 — VWAP pullback.** Price pulls back to session VWAP or EMA21 and
+  resumes with a close in the trend direction, confirmed by open-interest
+  buildup in that same direction.
+
+**Filters** (every enabled one must pass):
+
+- **F1 — Flow.** Long OI buildup for a BUY / short OI buildup for a SELL,
+  or volume at least 1.5x its 20-bar average.
+- **F2 — Higher-timeframe confirmation.** The 60-minute EMA9/21 must not
+  conflict with the trade direction (the daily value is still computed
+  and logged, but no longer vetoes by default).
+- **F3 — Exhaustion.** Blocks an entry too far (in ATR terms) from VWAP/
+  EMA9, or on an abnormally wide signal bar.
+- **F4 — Time of day.** All triggers are allowed 09:30-11:15 IST; from
+  12:00-14:00 only a fresh extreme or a T1/T2 trigger qualifies; nothing
+  new after 14:15.
+- **F5 — Counter-trend flip.** The first trade against the day's
+  established direction needs two consecutive closes beyond VWAP *and*
+  EMA21 plus a retest, and trades at half size — it's deliberately harder
+  to reverse than to continue.
+
+Every regime state, trigger result, and filter result is independently
+toggleable from the dashboard's settings page (**Regime, Triggers &
+Filters (v2)** group) so you can A/B test variants without touching code.
+
+**Which should you use?** `v1_score` is the longer-validated, confluence-
+style approach; `v2_setup` is the newer regime/trigger approach with finer-
+grained, independently-testable controls. Neither is "the right answer" —
+pick based on your own backtesting, and see the FAQ for more on switching
+between them.
+
+## 5. The risk engine: an ordered gauntlet, not a single check
+
+Every approved signal must pass every one of these checks, in this exact
+order — the first failure stops the pipeline right there and is recorded
+as a `RiskDecision` with the reason, whether or not a trade happens:
+
+```mermaid
+flowchart LR
+    A[Signal] --> B[Validation] --> C[Market data fresh?] --> D[Trading window?]
+    D --> E[Existing position / idea clustering?] --> F[Duplicate signal?]
+    F --> G[Cooldown?] --> H[Daily loss limit?] --> I[Daily trade count?]
+    I --> J[Daily circuit breaker?] --> K[Idea risk budget?] --> L[Total open-risk cap?]
+    L --> M[Max open positions?] --> N[Exposure room?] --> O[Stop-loss/target calc]
+    O --> P[Min risk:reward?] --> Q[Position sizing] --> R[Quantity valid?]
+    R --> S[TradeIntent: APPROVED]
+```
+
+Key additions from the most recent upgrade round:
+
+- **Idea clustering** — entries within a configurable window (default 20
+  minutes) on the same underlying + direction count as one "idea"; by
+  default only one entry per idea is allowed (the old unlimited-pyramiding
+  behavior is still available behind a flag).
+- **Daily circuit breaker** (see diagram below).
+- **Per-idea and total open-risk caps** — in addition to the existing
+  per-trade/exposure limits, the total risk (entry-to-stop distance ×
+  quantity) across one idea, and across every open position account-wide,
+  each has its own percent-of-capital ceiling.
+
+### The daily circuit breaker
+
+```mermaid
+stateDiagram-v2
+    [*] --> Normal
+    Normal --> Normal: winning trade (resets streak)
+    Normal --> Triggered: consecutive losing trades reach the limit
+    Triggered --> Normal: next trading day
+    Triggered --> Triggered: action = stop (no new entries) or half_size (half quantity)
+```
+
+Only trades that have **already exited** count toward the streak — an
+open position never counts, and the streak resets every trading day (and,
+by default, on any winning trade). When the configured limit of
+consecutive losing trades is reached, new entries are either blocked for
+the rest of the day (`action=stop`) or sized at half quantity
+(`action=half_size`, falling back to a full block if that would round to
+less than one lot). Every activation is logged and visible per-signal in
+the dashboard's risk-decisions table.
+
+> The specific "stopped a third put on Nov 2" / "blocked two entries on
+> Nov 16" scenario that motivated this feature comes from the project
+> owner's own earlier manual trading history — it's a real, useful
+> illustration of *why* the feature exists, but it is not a number this
+> codebase's test suite reproduces (there's no historical market data for
+> those exact dates baked into this repository). The mechanism itself is
+> covered by synthetic, repeatable tests instead.
+
+## 6. Worked example: running a backtest from the dashboard
+
+Open **Backtests** in the dashboard, enter the admin token, pick a start
+and end date (presets: last 5 days / last 30 days / current month — the
+page shows an approximate trading-day count and rejects future dates or a
+reversed range), and click **Run Backtest**.
+
+```mermaid
+stateDiagram-v2
+    [*] --> QUEUED
+    QUEUED --> RUNNING
+    RUNNING --> STOPPING: Stop clicked
+    RUNNING --> COMPLETED: replay finishes
+    RUNNING --> FAILED: unrecoverable error
+    STOPPING --> STOPPED: current candle finishes, open positions force-closed
+    COMPLETED --> [*]
+    STOPPED --> [*]
+    FAILED --> [*]
+```
+
+What happens underneath:
+
+1. A `PENDING` run row is saved, then a background task marks it `RUNNING`.
+   A brand-new, empty SQLite database and an in-memory Redis are created
+   just for this one run — completely isolated from your real PostgreSQL/
+   Redis, and it runs independently of whether the market is open or the
+   paper/live runtime is active.
+2. Historical candles are loaded and replayed in timestamp order through
+   the *exact same* strategy → risk → execution pipeline described above,
+   using a simulated clock. A signal can only ever fill using a *later*
+   candle's price, never the one that generated it.
+3. While it runs, the dashboard polls a progress endpoint showing a
+   status chip, a progress bar, the current candle's timestamp, and
+   elapsed time.
+4. Clicking **Stop** requests a smooth stop: the engine finishes whatever
+   candle it's on, force-closes any open simulated positions at that
+   candle's close (`exit_reason=BACKTEST_STOPPED`), and persists a
+   `STOPPED` result — not a crash, not a `FAILED` run. A stopped run's
+   results and export work exactly like a completed one.
+5. Results auto-load when the run finishes or stops. **Export** downloads
+   an XLSX (or CSV zip) with: Run Info, Run Summary (+ exit-reason
+   breakdown), Config Snapshot (the exact settings that run used, frozen
+   at trigger time), Candle Log (one row per processed candle, including
+   every no-signal/blocked candle), Signals & Risk Audit, Trades, Equity
+   Curve, Daily Summary, Rejected and Blocked, Data Quality, and Run Log.
+   Only one backtest runs at a time; a second request while one is active
+   gets a clear "already running" response.
+
+Every number in every sheet, every log line, and every API response is
+rounded to exactly 2 decimal places at the point it's displayed/exported
+— this is purely an output-formatting rule (`trading_system.utils.
+formatting.round2`/`format2`); nothing about it changes what a signal
+would have done, since all of the actual decision math runs at full
+precision internally.
+
+## 7. Worked example: a trade that gets rejected
+
+Same candle, same BUY decision from the strategy — but suppose the
 account has already lost ₹4,500 today against a configured
 `RISK_MAX_DAILY_LOSS=4000`.
 
-1. Steps 1-4 are identical to the example above: a `BUY` decision is
-   produced, a CE contract is chosen, and a `Signal` is saved.
-2. The risk engine runs the same checklist, in the same order. Market
-   data, trading window, duplicate-position, and cooldown checks all
-   still pass.
+1. A `BUY` decision is produced and a CE contract is chosen, same as a
+   normal entry.
+2. The risk engine runs its checklist in order. Market data, trading
+   window, duplicate-position, idea-clustering, duplicate-signal, and
+   cooldown checks all still pass.
 3. **The daily-loss check fails**: realized loss so far today (₹4,500)
    already exceeds the ₹4,000 limit.
-4. The engine stops right there. It does **not** continue on to compute
-   a stop-loss or position size for a trade it's about to reject.
-5. A `RiskDecision` is still saved -- with `status=REJECTED` and
-   `reason=MAX_DAILY_LOSS_EXCEEDED` -- so there's a permanent, auditable
+4. The engine stops right there — it never computes a stop-loss or
+   position size for a trade it's about to reject.
+5. A `RiskDecision` is still saved with `status=REJECTED` and
+   `reason=MAX_DAILY_LOSS_EXCEEDED`, so there's a permanent, auditable
    record of *why* no trade happened.
-6. **No `TradeIntent` is created, no order is sent, nothing is submitted
-   to the broker.** The pipeline simply stops one stage early. This is
-   the normal, everyday outcome for most signals once any single risk
-   limit is configured -- not a bug and not a crash.
+6. **No `TradeIntent` is created, no order is sent.** This is the normal,
+   everyday outcome once any risk limit is configured — not a bug.
 
-## 5. Worked example: reconciliation catching a mismatch
+## 8. Worked example: reconciliation catching a mismatch
 
-Reconciliation runs independently of the pipeline above -- it compares
+Reconciliation runs independently of the pipeline above — it compares
 what PostgreSQL/Redis *believe* against what the broker actually reports,
 and only ever flags or safely corrects differences; it never places an
 order itself.
 
-**Scenario A -- a fill that was missed locally (safe to auto-correct):**
-the application submitted an order and recorded it as `SUBMITTED`
-(acknowledged, not yet confirmed filled), but a brief network hiccup
-meant the fill confirmation was never received. The next reconciliation
-run calls `Broker.get_orders()` and sees this exact order is actually
-`COMPLETE` with all 75 units filled at ₹142.75. Because "broker says
-filled, local says submitted" is on the pre-approved safe list
-(`RECONCILIATION_AUTO_SYNC_ORDER_STATUS=true`), the local order row is
-updated to `FILLED` automatically, and the change is written to the
-audit trail (`order_reconciliation_records`).
+**A fill that was missed locally (safe to auto-correct):** the
+application submitted an order and recorded it as `SUBMITTED`, but a
+network hiccup meant the fill confirmation never arrived. The next
+reconciliation run sees the broker already reports it `COMPLETE`, and
+because "broker says filled, local says submitted" is on the pre-approved
+safe list, the local order row is updated automatically and the change is
+written to the audit trail.
 
-**Scenario B -- an unexplained broker position (never auto-corrected):**
-the broker reports a 150-unit position in an instrument PostgreSQL has no
-record of at all. This is exactly the kind of mismatch the system refuses
-to guess about: it's recorded as `BROKER_ONLY` with status
-`REQUIRES_MANUAL_ACTION`, and reconciliation stops there for that
-instrument. It is never auto-attributed to a strategy, never closed, and
-never treated as a new trade to manage -- a human has to look at it.
+**An unexplained broker position (never auto-corrected):** the broker
+reports a position PostgreSQL has no record of at all. This is recorded
+as `BROKER_ONLY`/`REQUIRES_MANUAL_ACTION` and reconciliation stops there
+for that instrument — it is never guessed at, auto-attributed, or closed.
+A human has to look at it.
 
-**The rule that separates A from B:** a *decrease* or an *exact match* in
-quantity, or a known order reaching a further-along status, is
-considered safe to sync automatically. Any *increase* in quantity, a
-sign flip (long vs. short), or a position/order the local database has
-never heard of at all, always requires a human to look at it -- see
-[Phase 10](phases/phase-10-reconciliation.md) for the complete rule set.
+## 9. Where to go next
 
-## 6. Worked example: running a backtest
-
-Configure the strategy, watchlist, instrument mode, dates, interval, and
-initial capital in the dashboard. Open **Backtests**, enter the dashboard
-admin token, and select **Run saved configuration**. The dashboard queues the
-historical run without restarting or stopping the paper/live trading runtime.
-
-What happens when this runs:
-
-1. A `PENDING` run record is saved, then marked `RUNNING` by the dashboard
-   background task. A brand-new, empty SQLite database and an in-memory Redis are created
-   just for this one run -- completely separate from your real
-   PostgreSQL/Redis, so a backtest can never affect real data.
-2. Historical candles for both underlying instruments between the two
-   dates are loaded (from PostgreSQL if already synced, otherwise from
-   Kite's historical-data API), then replayed in timestamp order.
-3. The *exact same* `StrategyEngine` → `RiskEngine` →
-   `OrderExecutionEngine` pipeline described in section 2 runs candle by
-   candle, in order, exactly as it would live -- except every "send the
-   order" step goes to a simulated adapter instead of Kite, and a
-   signal can only ever fill using a *later* candle's price (never the
-   candle that generated it, which would be cheating).
-4. The replay checks the shared order-entry pause as well as the execution
-boundary; pausing skips new entries but leaves simulated protective exits
-active. The two instruments share one virtual portfolio and starting capital.
-   At the end of the run, a single `BacktestResult` is produced: for example,
-   *42 trades, 58% win rate, profit factor 1.7, max drawdown 6.2%* --
-   and a summary row is saved to the real database's `backtest_runs` /
-   `backtest_trades` tables so past runs can be compared later.
-5. Nothing here ever reaches the real Kite API, and no real order is ever
-   placed -- see [Phase 11](phases/phase-11-backtesting-paper.md) for the
-   full list of simulation assumptions (slippage, fill rules, costs).
-
-## 7. Where to go next
-
+- Want to actually run something? Read the [How-To Guide](how-to.md).
+- Have a quick question? Check the [FAQ](faq.md).
 - Want the *why* behind each design choice above? Read
   [Architecture & Data Flow](architecture.md).
 - Want the full list of every file and what it's responsible for? Read
   [Module Reference](module-reference.md).
-- Want to actually run this? Read [Setup & Configuration](setup.md) and
-  [Operations](operations.md).
 - Want to know exactly what's missing before this can trade for real?
   Read [Safety Mechanisms & Roadmap](safety-and-limitations.md).

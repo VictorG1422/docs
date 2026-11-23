@@ -60,33 +60,44 @@ beyond the most liquid names.
     section covers the *design decisions* behind that pipeline instead of
     repeating the steps.
 
-**The configured application runtime is the canonical trading path.**
-`Application` selects one database-configured mode and wires a `BaseStrategy`
-through `StrategyEngine`, `RiskEngine`, and `OrderExecutionEngine`. The
-strategy engine emits validated, persisted signals; the runtime hands those
-signals to risk and execution. The old Phase 1 `Strategy`/`RiskManager`/
-`OrderManager` objects remain in the repository as legacy components; they
-are not the configured paper/live/backtest pipeline.
+**`Application` owns the market-hours state machine, and selects one of
+two configured modes.** `Application` wires a `BaseStrategy` through
+`StrategyEngine`, `RiskEngine`, and `OrderExecutionEngine`; the strategy
+engine emits validated, persisted signals, and the runtime hands those
+signals to risk and execution. `APP_MODE` is `paper` or `live` only --
+there is no "backtest" startup mode; a backtest is always triggered on
+demand from the dashboard, using its own isolated SQLite + Redis and
+simulated clock, independent of whether a paper/live runtime is active
+(see [Flow, Strategy Logic & Diagrams](flow-and-examples.md)). A
+background supervisor thread inside `Application` drives
+`STARTING -> WAITING_FOR_MARKET -> WARMING_UP -> RUNNING -> MARKET_CLOSED`
+(and `ERROR_RETRY`) for the life of the process -- the process itself
+never exits because NSE is closed.
 
-The current selectable strategy is `technical_scoring`: a configurable
-multi-timeframe pattern/indicator confluence scorer. `no_op` is also
-selectable for deliberately disabling signals. Neither the implementation
-nor a passing test suite is a claim that a trading strategy is approved for
-production; see [Safety Mechanisms & Roadmap](safety-and-limitations.md).
+Two strategies are selectable: `technical_scoring`, configured via
+`scoring_strategy_mode` as either `v1_score` (the original multi-timeframe
+pattern/indicator confluence scorer) or `v2_setup` (a regime-state-machine
+plus independent-trigger/filter system with no score threshold at all);
+and `no_op`, which deliberately disables signal generation. Neither
+implementation, nor a passing test suite, is a claim that either strategy
+is approved for production; see
+[Safety Mechanisms & Roadmap](safety-and-limitations.md).
 
-The dashboard's Redis-backed order-entry switch is shared by configured
-backtest, paper, and live execution. Pausing blocks entry signals/orders at
-both runtime and final execution checks. Protective exits and
+The dashboard's Redis-backed order-entry switch is shared by paper, live,
+and a running backtest. Pausing blocks entry signals/orders at both
+runtime and final execution checks. Protective exits and
 dashboard-admin-authenticated manual exits remain available. Live
 submission still requires the separate environment, mode, credential, and
 `ORDER_EXECUTION_ENABLED` safeguards.
 
 Risk-approved index CE/PE entries with distinct signals can create separate
-entry lots for one contract; same-signal repeats remain deduplicated and
-open EQ duplicates remain blocked. Live lots are persisted separately and
-reconciled against the broker's net instrument exposure. Paper/backtest
-portfolios also keep per-entry lots, so each lot retains its own protective
-levels and manual-exit selector.
+entry lots for one contract (subject to the idea-clustering cap described
+in [Flow, Strategy Logic & Diagrams](flow-and-examples.md#5-the-risk-engine-an-ordered-gauntlet-not-a-single-check));
+same-signal repeats remain deduplicated and open EQ duplicates remain
+blocked. Live lots are persisted separately and reconciled against the
+broker's net instrument exposure. Paper/backtest portfolios also keep
+per-entry lots, so each lot retains its own protective levels and
+manual-exit selector.
 
 Key design decisions behind the real pipeline:
 
@@ -99,12 +110,10 @@ Key design decisions behind the real pipeline:
   snapshot of the market and returns `BUY`, `SELL`, or `None`. It has no
   access to the broker, the database, or Redis -- which makes a strategy
   trivial to unit-test and impossible to accidentally wire into live
-  └── logs/                        # local scratch data (gitignored contents)
-  ```
-  order requires a persisted, risk-approved `TradeIntent`
-  *and* the independent gates `ORDER_EXECUTION_ENABLED=true`,
-  `APP_ENV=production`, and the database-selected `APPLICATION_MODE=live`.
-  Missing any gate prevents real order submission.
+  order submission. Placing a real order requires a persisted,
+  risk-approved `TradeIntent` *and* the independent gates
+  `ORDER_EXECUTION_ENABLED=true`, `APP_ENV=production`, and
+  `APP_MODE=live`. Missing any gate prevents real order submission.
 - **Storage is split by how fast and how durable the data needs to be**:
   PostgreSQL holds everything that must survive a restart and be
   auditable (orders, positions, trades, signals, instruments); Redis
@@ -112,12 +121,12 @@ Key design decisions behind the real pipeline:
   (latest ticks, locks, duplicate-signal guards); S3 is for bulk
   snapshots. Raw high-frequency ticks are deliberately **not** written to
   PostgreSQL -- only completed candles are.
-- **`TradingEngine` (`engine.py`) is a wiring layer, not a decision
-  maker**: it constructs every component and exposes explicit methods
-  like `execute_trade_intent()`, but nothing in it decides *when* to call
-  them -- that stays an explicit, deliberate choice made by whatever
-  wires the engine up (see
-  [Safety Mechanisms & Roadmap](safety-and-limitations.md#what-remains-to-be-implemented)).
+- **Every displayed/exported number is rounded once, at the edge**
+  (`utils/formatting.py::round2()`/`format2()`, 2 decimal places,
+  `ROUND_HALF_UP`): indicator math, scoring, the cost model, and the risk
+  engine all compute at full precision; rounding only ever happens when a
+  value is about to be logged, returned from the API, shown in the UI, or
+  written into an export cell.
 
 
 ## Repository layout
@@ -140,20 +149,22 @@ trading_platform/
 │   ├── __init__.py
 │   └── settings.py             # env-driven Settings (pydantic-settings)
 ├── src/trading_system/
-│   ├── main.py                 # application entry point
-│   ├── engine.py                # TradingEngine orchestration
+│   ├── main.py                  # application entry point (no HTTP server)
+│   ├── application.py           # Application: lifecycle + market-hours supervisor
+│   ├── app_state.py             # AppState enum + status store (GET /api/status)
 │   ├── broker/                  # Kite abstraction (REST + WebSocket)
 │   ├── market_data/             # tick processing, instruments, option chain
-│   ├── strategy/                # Strategy interface + placeholder
-│   ├── execution/               # paper/live execution, order & position managers
-│   ├── risk/                    # risk manager
+│   ├── strategy/                # BaseStrategy, v1_score scoring, v2_setup regime/triggers/filters
+│   ├── execution/                # paper/live execution, order execution engine
+│   ├── risk/                    # risk engine, policy, position sizing, circuit breaker
+│   ├── backtest/                # backtest engine, portfolio, export, entry-trigger watcher
 │   ├── storage/                 # PostgreSQL / Redis / S3 clients
 │   │   ├── postgres.py
-│   │   ├── redis/                # Phase 3: pooled client, key builder, state/lock/dedup/cache stores
+│   │   ├── redis/                # pooled client, key builder, state/lock/dedup/cache stores
 │   │   ├── s3.py
-│   │   └── db/                   # Phase 2: ORM models, repositories
+│   │   └── db/                   # ORM models, repositories
 │   ├── models/                  # Tick, Instrument, Signal, Order, Position
-│   ├── utils/                   # structured logging, market-time utilities
+│   ├── utils/                   # logging, market-time helpers, utils/formatting.py (2dp output rule)
 │   └── exceptions/               # typed exception hierarchy
 ├── src/dashboard/                # standalone dashboard app and API
 │   ├── main.py                   # `python -m dashboard.main`

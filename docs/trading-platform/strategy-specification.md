@@ -1,15 +1,20 @@
 # Strategy Specification and Rule Template
 
 > **Status: OWNER SPECIFICATION AWAITING INPUT.** The configured runtime
-> currently defaults to `technical_scoring`, a generic, configurable
-> pattern-confluence implementation. This template is not its specification,
-> and the implementation has not been validated or approved for production.
-> `no_op` remains available to disable signal generation. Complete this
-> document to define and review the project's intended trading rules.
+> currently defaults to `technical_scoring`, which itself offers two
+> generic, configurable implementations selected by `scoring_strategy_mode`
+> -- `v1_score` (weighted pattern confluence) and `v2_setup` (a regime
+> state machine with independent entry triggers/filters, see
+> [Flow, Strategy Logic & Diagrams](flow-and-examples.md) for how each
+> actually decides to trade). This template is not either one's
+> specification, and neither implementation has been validated or approved
+> for production. `no_op` remains available to disable signal generation.
+> Complete this document to define and review the project's intended
+> trading rules.
 >
 > This file remains a template because no owner-approved specification of
 > the intended trading strategy has been supplied. The repository does
-> contain a generic, configurable `technical_scoring` implementation and
+> contain two generic, configurable `technical_scoring` implementations and
 > instrument/risk workflows; those implementation defaults are not a
 > substitute for documented, reviewed trading rules. Do not infer strategy
 > approval or expected performance from the presence of that code. Complete

@@ -276,39 +276,55 @@ Verify the token against the synchronized database:
 | NIFTY BANK index signal source | `260105` | `NIFTY BANK` | `NSE` / `INDICES` | `0` in the instrument master |
 | NIFTY near-month futures | *(changes monthly; not an index signal source)* | `NIFTYxxFUT` | `NFO` / `NFO-FUT` | varies |
 
-### Step 2 — configure and start the backtest
+### Step 2 — configure and run the backtest
 
-On **Trading & risk settings** (`/risk-settings`), select `Backtest` as
-the application mode, choose the strategy and instrument mode, set the
-start/end dates, candle interval, and initial capital. Add the underlying
-instrument token(s) to the matching options or equity watchlist on
-**Instruments & watchlists**. Save the settings, ensure the dashboard is
-running separately, then start or restart the algorithm:
+On **Trading & risk settings** (`/risk-settings`), choose the strategy
+(`v1_score` or `v2_setup`), instrument mode, candle interval, and initial
+capital. Add the underlying instrument token(s) to the matching options or
+equity watchlist on **Instruments & watchlists** and save. Backtests no
+longer have their own dates on the settings page — they're entered
+per-run, directly on the **Backtests** tab. Make sure `python -m
+dashboard.main` (and, if you want paper/live running at the same time,
+`python -m trading_system.main`) are running, then:
 
-```powershell
-python -m trading_system.main
-```
+1. Open **Backtests** (`/backtests`) and enter the dashboard admin token.
+2. Pick a start and end date in the calendar (presets: last 5 days, last
+   30 days, current month — it shows an approximate trading-day count and
+   refuses future dates or a reversed range).
+3. Click **Run Backtest**. The run is queued in the dashboard process
+   itself — it needs no restart of, and has zero effect on, any running
+   paper/live trading. Only one backtest can run at a time.
+4. Watch the status chip, progress bar, current candle timestamp, and
+   elapsed time update as it runs (polled automatically).
+5. Click **Stop Backtest** at any point to request a smooth stop — it
+   finishes the current candle, force-closes any open simulated
+   positions, and still produces a fully exportable `STOPPED` result
+   (confirm via the dialog; this cannot be undone mid-run, but the result
+   stays available afterward).
+6. When it finishes (`COMPLETED` or `STOPPED`), the results panel loads
+   automatically. Use **Export** on the run's detail page to download an
+   XLSX (or CSV zip) with every sheet described in
+   [Flow, Strategy Logic & Diagrams, section 6](flow-and-examples.md#6-worked-example-running-a-backtest-from-the-dashboard).
 
-The configured backtest runs once in the algorithm process. Inspect its
-persisted run, audit, and trades on `/backtests`; use algorithm logs and
-the persisted run status for completion. A backtest requires both dates and at least one
-synchronized token in the selected watchlist. The end date is inclusive.
-The old `scripts/backtest.py` path is only a compatibility shim; it
-accepts no backtest arguments.
+A backtest requires at least one synchronized token in the selected
+watchlist; the end date is inclusive. The old `scripts/backtest.py` path
+is only a compatibility shim; it accepts no backtest arguments.
 
 ### Backtest troubleshooting
 
 | What you see | What it means | What to do |
 | --- | --- | --- |
-| `INSUFFICIENT_CAPITAL` rejections | The selected option/equity position exceeds configured risk or exposure limits. | Review the contract and persisted risk checks in the backtest audit before changing limits. |
-| `OUTSIDE_TRADING_WINDOW` on a signal | Intraday backtests evaluate configured windows and first/last-session guards at the simulated candle-close time in IST. Daily equity swing backtests do not apply intraday-only windows. | Check the saved window/edge settings and inspect the signal timestamp and risk reason in the audit. |
-| Zero trades despite signal activity | Option contract/premium candles may be unavailable, or risk checks may reject signals. | Inspect score-component columns, signal/risk reasons, and data-quality warnings in the run audit. |
+| `422` when clicking Run | The date range is invalid (future date, end before start, or missing). | Fix the dates in the calendar; the page validates before submitting. |
+| `409` when clicking Run | A backtest is already queued or running. | Wait for it to finish, or Stop it first — only one runs at a time. |
+| `INSUFFICIENT_CAPITAL` rejections | The selected option/equity position exceeds configured risk or exposure limits. | Review the contract and persisted risk checks in the Signals & Risk Audit export sheet before changing limits. |
+| `OUTSIDE_TRADING_WINDOW` on a signal | Intraday backtests evaluate configured windows and first/last-session guards at the simulated candle-close time in IST. Daily equity swing backtests do not apply intraday-only windows. | Check the saved window/edge settings and inspect the signal timestamp and risk reason in the export. |
+| Zero trades despite signal activity | Option contract/premium candles may be unavailable, the regime/filters may be blocking every candidate (`v2_setup`), or risk checks may reject signals. | Inspect the Candle Log and Rejected and Blocked export sheets for the exact reason on every candle. |
 | `status: FAILED` | Something broke — most commonly, the database schema isn't up to date. | Run `alembic upgrade head` (see "How to update the database" below), then try again. |
 
 ## How to run paper trading
 
 Paper trading watches real-time market data while simulating orders and
-fills. Configure `APPLICATION_MODE=paper`, the strategy, candle interval,
+fills. Configure `APP_MODE=paper`, the strategy, candle interval,
 and one or more synchronized underlying instruments in the dashboard,
 save, then start the algorithm process:
 
@@ -335,7 +351,7 @@ session arguments.
 separate places at once.** All three must be explicitly set for a real
 order to ever reach your broker:
 
-1. Select `APPLICATION_MODE=live` in the dashboard.
+1. Select `APP_MODE=live` in the dashboard.
 2. Configure `APP_ENV=production` outside the database.
 3. Set `ORDER_EXECUTION_ENABLED=true` in the trusted environment/secrets
    configuration; it is never dashboard-editable.
@@ -344,14 +360,17 @@ This is deliberate: the system assumes paper trading unless you
 *unambiguously* say otherwise. Before touching any of these:
 
 - Run your strategy in paper mode for a meaningful stretch of time first
-  and review the results honestly.
+  and review the results honestly — see
+  [Safety Mechanisms & Roadmap](safety-and-limitations.md) for exactly
+  what hasn't been independently validated yet for either built-in
+  strategy.
 - Make sure your risk settings (below) reflect money you are actually
   willing to lose — they are the only thing standing between a strategy
-  decision and a real order.
-- Understand that this system currently has **no automatic exit**: once
-  a position opens, nothing closes it for you (see
-  [Safety Mechanisms & Roadmap](safety-and-limitations.md)). You are
-  responsible for monitoring and manually closing any live position.
+  decision and a real order. The stop-loss/target/trailing/partial-exit/
+  time-stop exit mechanics do run automatically once a position is open
+  (see [Flow, Strategy Logic & Diagrams](flow-and-examples.md)), but they
+  depend on a live tick feed — see the safety page's known gaps for what
+  that does and doesn't cover.
 
 With live mode selected but the trusted execution gate disabled, the
 runtime is monitor-only and does not submit orders. Startup reconciliation
@@ -398,7 +417,9 @@ as high as that minimum.
 | Avoid the volatile first/last few minutes of the session | `RISK_AVOID_FIRST_MINUTES_OF_SESSION` / `RISK_AVOID_LAST_MINUTES_OF_SESSION` | `15` |
 | Choose which indices/stocks to trade as options | `OPTIONS_WATCHLIST` | Select underlying EQ instruments in the dashboard; persisted as token IDs |
 | Choose which stocks to trade directly (no options) | `EQUITY_WATCHLIST` | Select tradable cash EQ instruments in the dashboard; persisted as token IDs |
-| Select backtest, paper, or live runtime | `APPLICATION_MODE` | `backtest`, `paper`, or `live` |
+| Select paper or live runtime | `APP_MODE` | `paper` or `live` (no "backtest" startup mode — see [How to run a backtest](#how-to-run-a-backtest)) |
+| Switch strategy | `STRATEGY_NAME` | `technical_scoring` (then pick `scoring_strategy_mode` = `v1_score` or `v2_setup`) or `no_op` |
+| Stop trading after consecutive losses | `RISK_DAILY_CIRCUIT_BREAKER_ENABLED` / `RISK_CONSECUTIVE_LOSS_LIMIT` | `true` / `2` |
 | See more detail in the logs | `LOG_LEVEL` | `DEBUG` |
 
 The full list of every available setting, with a plain description of
@@ -452,34 +473,17 @@ far more detail while diagnosing something.
 
 ## Frequently asked questions
 
-**Why did my backtest only open one trade all week, even though I saw
-many signals in the log?**
-Check the recorded risk decisions and exits. Repeated signal IDs are
-deduplicated. An open EQ position blocks another entry for that EQ, but
-distinct signals can open separate index CE/PE lots in the same contract.
-Configured paper/backtest positions are also evaluated for protective
-stop-loss/target exits; each entry lot keeps its own levels.
+See the dedicated [FAQ page](faq.md) for the full list — it covers why a
+strategy might not trade, what stopping a backtest does, what
+`WAITING_FOR_MARKET` means, the daily circuit breaker, and more. Two
+quick ones specific to this page:
 
 **How do I stop new orders without closing open positions?**
-Use the dashboard's **Pause new entries** control. The pause applies to
-configured backtest, paper, and live workflows. It blocks new entries, not
-protective exits or already-submitted orders; it does not liquidate positions.
+Use the dashboard's **Pause new entries** control. It applies to paper,
+live, and a running backtest. It blocks new entries, not protective exits
+or already-submitted orders; it does not liquidate positions.
 
 **How do I manually exit one or more open positions?**
 Select open paper/live position lots in the dashboard and submit the manual
 exit. Each selected lot receives its own audited exit with reason
-`MANUAL_EXIT`. Manual exits are not available for completed backtest results.
-
-**My backtest/paper session shows a profit or loss, but "total trades"
-is zero — is that a bug?**
-No — see "Step 3 — read the result" above. The P&L reflects an open
-position being marked to the latest price; it only becomes a counted
-"trade" once it's closed.
-
-**Can I trade NIFTY/BANKNIFTY itself?**
-Not directly — only its futures, its options, or an ETF that tracks it.
-See "Before you start" above.
-
-**I changed a setting but nothing happened.**
-Settings are only read once, at startup. Stop the running
-process/session and start it again.
+`MANUAL_EXIT`. Manual exits are not available for backtest results.

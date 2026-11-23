@@ -75,7 +75,7 @@ no AWS override for database-managed strategy or scoring values.
 | `AWS_SECRETS_NAME` | `victor/zerodha/kite` | AWS Secrets Manager secret containing only the allow-listed credentials and infrastructure settings. Read from `.env`/environment so the secret can be located. |
 | `DASHBOARD_ADMIN_TOKEN` | *(empty)* | AWS secret key for authorizing dashboard configuration writes; an empty value disables editing. |
 | `DASHBOARD_HOST` / `DASHBOARD_PORT` | `127.0.0.1` / `8000` | Environment/bootstrap settings for the standalone dashboard/API listener (`python -m dashboard.main`). Set host to `0.0.0.0` inside a container. |
-| `APPLICATION_MODE` | `paper` | PostgreSQL dashboard setting selecting the trading runtime (`paper` or `live`). The legacy `backtest` value does not auto-run; start runs explicitly from the dashboard. |
+| `APP_MODE` | `paper` | PostgreSQL dashboard setting selecting the trading runtime (`paper` or `live` only — there is no "backtest" startup mode; trigger a backtest explicitly from the dashboard instead). |
 | `STRATEGY_NAME` | `technical_scoring` | PostgreSQL dashboard setting selecting `technical_scoring` or `no_op`. |
 | `PAPER_INITIAL_CAPITAL` / `PAPER_CANDLE_INTERVAL_MINUTES` | `100000` / `5` | PostgreSQL dashboard settings for paper session capital and candle interval. |
 | `BACKTEST_INSTRUMENT_MODE` | `OPTIONS` | PostgreSQL dashboard setting choosing the options or equity watchlist for the configured backtest. |
@@ -85,8 +85,11 @@ no AWS override for database-managed strategy or scoring values.
 | `EQUITY_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: synchronized tradable cash-EQ instrument-token IDs. Each selected instrument generates signals and is itself traded. |
 | `SCORING_WEIGHT_<PATTERN_NAME>` | *(unset)* | PostgreSQL dashboard setting per pattern/indicator; overrides that entry in `scoring._DEFAULT_WEIGHTS`. |
 | `SCORING_BUY_THRESHOLD` / `SCORING_SELL_THRESHOLD` | *(unset)* | PostgreSQL dashboard settings for `ScoringConfig` buy/sell thresholds (defaults `50`). |
-| `TRADING_MODE` | `paper` | Legacy environment/database compatibility field. Use PostgreSQL `APPLICATION_MODE` for runtime selection. |
-| `ORDER_EXECUTION_ENABLED` | `false` | Trusted environment/`.env` only; not dashboard-editable. Live submission additionally requires `APP_ENV=production`, `APPLICATION_MODE=live`, and valid Kite credentials. |
+| `ORDER_EXECUTION_ENABLED` | `false` | Trusted environment/`.env` only; not dashboard-editable. Live submission additionally requires `APP_ENV=production`, `APP_MODE=live`, and valid Kite credentials. |
+| `SCORING_STRATEGY_MODE` | `v1_score` | Which configured strategy logic to run: `v1_score` (original weighted scoring) or `v2_setup` (regime/trigger/filter system, no score threshold). |
+| `RISK_DAILY_CIRCUIT_BREAKER_ENABLED` | `true` | Stops (or halves, via `RISK_CIRCUIT_BREAKER_ACTION`) new entries for the rest of the day after `RISK_CONSECUTIVE_LOSS_LIMIT` (default `2`) consecutive closed losing trades. |
+| `HEARTBEAT_INTERVAL_SECONDS` | `1800` | How often the market-hours supervisor logs a heartbeat while idle/waiting. |
+| `MARKET_SUPERVISOR_POLL_SECONDS` | `15` | How often the market-hours supervisor checks for an open/close transition. |
 | `EXECUTION_ORDER_TYPE` | `MARKET` | Environment/`.env` only; Phase 9 `MARKET`, `LIMIT`, `SL`, or `SL-M`. Stop order types require an explicit entry trigger in the intent metadata; no protective stop orders are generated. |
 | `EXECUTION_PRODUCT` | `MIS` | Environment/`.env` only; broker-supported `MIS`, `NRML`, or `CNC` product. |
 | `EXECUTION_VALIDITY` | `DAY` | Environment/`.env` only; broker-supported `DAY` or `IOC` order validity. |
@@ -99,7 +102,7 @@ no AWS override for database-managed strategy or scoring values.
 | `RECONCILIATION_AUTO_SYNC_POSITION_QUANTITY` / `_POSITION_PRICE` / `_POSITION_STATUS` | `true` | Phase 10: per-field position auto-sync policy flags (safe categories only; an unsafe quantity increase is never governed by a flag). |
 | `LOG_LEVEL` | `INFO` | Root logger level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `RISK_POLICY_VERSION` | `1` | Recorded on every `RiskDecision`/`TradeIntent` for audit purposes. |
-| `RISK_MAX_RISK_PER_TRADE` | *(unset)* | Max rupees at risk on a single trade. `None`/unset = not enforced -- see [Phase 8](phases/phase-08-risk-position.md). |
+| `RISK_MAX_RISK_PER_TRADE` | *(unset)* | Max rupees at risk on a single trade. `None`/unset = not enforced -- see [Flow, Strategy Logic & Diagrams](flow-and-examples.md#5-the-risk-engine-an-ordered-gauntlet-not-a-single-check). |
 | `RISK_MAX_DAILY_LOSS` | *(unset)* | Max realized daily loss (rupees) before new trades are blocked. |
 | `RISK_MAX_OPEN_POSITIONS` | *(unset)* | Max durably-open PostgreSQL positions. |
 | `RISK_MAX_DAILY_TRADES` | *(unset)* | Max `RISK_APPROVED` trade intents per day. |
@@ -112,7 +115,7 @@ no AWS override for database-managed strategy or scoring values.
 | `RISK_DATA_STALENESS_LIMIT_SECONDS` | *(unset)* | Optional staleness limit tighter than Phase 6's default `MarketDataStatus` classification. |
 | `RISK_AVOID_FIRST_MINUTES_OF_SESSION` | *(unset)* | **Recommended for NIFTY/BANKNIFTY F&O: `15`.** Rejects trade intents within this many minutes of the 09:15 IST session open (opening-range volatility/gap risk). Unset by default -- unlike the stop-loss defaults, off by default because it depends on wall-clock/session time; opt in explicitly. |
 | `RISK_AVOID_LAST_MINUTES_OF_SESSION` | *(unset)* | **Recommended for NIFTY/BANKNIFTY F&O: `15`.** Rejects trade intents within this many minutes of the 15:30 IST session close (closing-volatility/pin risk). Same opt-in rationale as above. |
-| `RISK_STOP_LOSS_METHOD` | `ATR` | `ATR` / `PERCENTAGE` / `POINTS`, or empty/unset to disable stop-loss entirely. See [Phase 8](phases/phase-08-risk-position.md). |
+| `RISK_STOP_LOSS_METHOD` | `ATR` | `ATR` / `PERCENTAGE` / `POINTS`, or empty/unset to disable stop-loss entirely. See [Flow, Strategy Logic & Diagrams](flow-and-examples.md#5-the-risk-engine-an-ordered-gauntlet-not-a-single-check). |
 | `RISK_STOP_LOSS_ATR_PERIOD` | `14` | ATR lookback period (Wilder's standard). |
 | `RISK_STOP_LOSS_ATR_MULTIPLIER` | `1.5` | Stop distance = `ATR * this multiplier`. |
 | `RISK_STOP_LOSS_PERCENTAGE` | `0.10` | Used directly for the `PERCENTAGE` method, and as the automatic fallback for `ATR` when candle history is insufficient. |
@@ -159,7 +162,7 @@ read from this secret.
 ```
 
 No other secret keys are applied to `Settings`. In particular, AWS keys
-such as `OPTIONS_WATCHLIST`, `EQUITY_WATCHLIST`, `TRADING_MODE`,
+such as `OPTIONS_WATCHLIST`, `EQUITY_WATCHLIST`, `APP_MODE`,
 `RISK_*`, or `SCORING_*` are ignored. Configure scoring weights in the
 dashboard with `SCORING_WEIGHT_<PATTERN_NAME>`; unspecified weights use
 the strategy defaults. If the AWS call fails or its body is not valid
@@ -220,15 +223,21 @@ Unit tests monkeypatch the AWS fetch function and do not access AWS.
 
 ## Trading modes
 
-- The PostgreSQL `APPLICATION_MODE` dashboard setting selects exactly one
-  workflow: `backtest`, `paper` (the default), or `live`. Configure it and
-  mode-specific parameters in the dashboard; saved values take effect
-  after restarting `python -m trading_system.main`.
-- `backtest` runs the configured historical interval/date/watchlist once
-  after startup and persists its result for the dashboard.
+- The PostgreSQL `APP_MODE` dashboard setting selects exactly one startup
+  workflow: `paper` (the default) or `live`. There is no "backtest"
+  startup mode — configure it and mode-specific parameters in the
+  dashboard; saved values take effect after restarting
+  `python -m trading_system.main`.
 - `paper` consumes live market data but simulates order execution; it
   never places real orders.
 - `live` selects the protected live runtime. It is monitor-only unless
   the trusted `ORDER_EXECUTION_ENABLED=true` gate, `APP_ENV=production`,
   and valid Kite credentials are all present. The execution gate is
   never stored in or editable through PostgreSQL.
+- Regardless of mode, the process stays alive and waits (rather than
+  exiting) whenever NSE is closed — see
+  [Flow, Strategy Logic & Diagrams](flow-and-examples.md#1-the-process-never-exits-because-the-market-is-closed).
+- To run a backtest, start the dashboard (`python -m dashboard.main`) and
+  trigger it from the **Backtests** tab — see
+  [How-To: running a backtest](how-to.md#how-to-run-a-backtest). It needs
+  no paper/live runtime, and runs independently of `APP_MODE`.

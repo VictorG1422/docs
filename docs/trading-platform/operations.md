@@ -9,14 +9,24 @@ python -m trading_system.main
 
 `python -m trading_system.main` starts only the configured algorithm. It
 loads secrets and validated PostgreSQL settings, synchronizes required
-instruments once per IST calendar day per exchange, then runs backtest,
-paper, or live mode. Migration `0021` stores each exchange's last successful
-sync date. The explicit `python scripts/download_instruments.py` command
-still forces a refresh. It does not start an HTTP server. Runtime values are managed in PostgreSQL; there are no mode,
-strategy, instrument, or date command-line arguments.
-Paper and live runtimes automatically begin graceful shutdown at or after
-15:30 IST, using the same cleanup path as Ctrl+C/SIGTERM. Backtests are not
-cut off by the market-close timer.
+instruments once per IST calendar day per exchange, then runs paper or
+live mode (`APP_MODE` — there is no "backtest" startup mode). Migration
+`0021` stores each exchange's last successful sync date. The explicit
+`python scripts/download_instruments.py` command still forces a refresh.
+It does not start an HTTP server. Runtime values are managed in
+PostgreSQL; there are no mode, strategy, instrument, or date command-line
+arguments.
+
+**The process does not exit at market close.** At 15:30 IST (or whenever
+NSE is otherwise closed — weekend, holiday, before 09:15), the running
+paper/live workflow is stopped cleanly and the process moves into
+`WAITING_FOR_MARKET`, staying alive with the dashboard/API fully
+available, and automatically resumes the workflow at the next session
+open with no restart needed. See
+[Flow, Strategy Logic & Diagrams](flow-and-examples.md#1-the-process-never-exits-because-the-market-is-closed)
+for the full state machine and `GET /api/status` for the live snapshot.
+`Ctrl+C`/`SIGTERM` is still the only way to actually stop the process.
+Backtests run independently of this and are never cut off by it.
 
 At startup, the algorithm fetches the NSE trading-holiday calendar for CM
 and FO from NSE and upserts it into PostgreSQL. If NSE is unreachable or
@@ -240,8 +250,10 @@ docker run --rm --env-file .env algo-trading
 ```
 
 The Dockerfile installs `requirements.txt`, then installs
-the package itself (`pip install -e .`). `APPLICATION_MODE` defaults to
-paper in PostgreSQL; the mode is changed through the protected dashboard.
+the package itself (`pip install -e .`). `APP_MODE` defaults to
+paper in PostgreSQL; the mode (`paper` or `live` — no "backtest" startup
+mode) is changed through the protected dashboard. The process stays up
+and waits whenever NSE is closed rather than exiting.
 Live order submission additionally requires the independently trusted
 `ORDER_EXECUTION_ENABLED=true`, `APP_ENV=production`, and valid Kite
 credentials. The default container command runs only

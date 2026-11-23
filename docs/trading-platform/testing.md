@@ -32,24 +32,33 @@ strategy). Phase 8 risk-engine tests (`tests/unit/test_risk_policy.py`,
 `test_position_sizer.py`, `test_account_state.py`, `test_risk_state_store.py`,
 `test_stop_loss.py`, `test_risk_engine.py`) use the same in-memory SQLite/`fakeredis` doubles
 plus a scripted `AccountStateProvider` test double (never a real broker/
-account balance). Phase 11's dashboard and editable-settings addendum
-tests (`tests/unit/test_api.py`) use FastAPI's `TestClient` with every
-dependency overridden -- an in-memory SQLite session (its own fixture,
-not the shared one, since `TestClient` runs requests on a different
-thread -- see [Phase 11](phases/phase-11-backtesting-paper.md)) and
-trivial fakes for Postgres/Redis/Kite; never a real connection. They
-cover normalized scores, metrics, protected settings writes, validation,
-auditing, and runtime override precedence. Integration tests
-(`tests/integration/`) are
-skipped by default since they require real Postgres/Redis instances --
-`test_storage_integration.py` covers Phase 2/3 connectivity,
-`test_kite_market_data_integration.py` covers the Phase 4/5 instrument-sync/
-tick-pipeline/option-chain flows, `test_strategy_engine_integration.py`
-covers the Phase 7 `TickProcessor -> MarketDataService -> StrategyEngine
--> Signal -> PostgreSQL/Redis` flow end-to-end (with a fake `Broker`/
-scripted strategy, never the real Kite API), and `test_risk_engine_integration.py`
-covers the Phase 8 `Signal -> RiskEngine -> RiskDecision/TradeIntent ->
-PostgreSQL/Redis` flow end-to-end. Opt in with:
+account balance). The dashboard and editable-settings tests (`tests/unit/test_api.py`) use
+FastAPI's `TestClient` with every dependency overridden -- an in-memory
+SQLite session (its own fixture, not the shared one, since `TestClient`
+runs requests on a different thread) and trivial fakes for Postgres/
+Redis/Kite; never a real connection. They cover normalized scores,
+metrics, protected settings writes, validation, auditing, and runtime
+override precedence, plus the Backtest tab's calendar/Run/Stop/progress/
+export endpoints. The most recent upgrade round added its own focused
+suites for the application market-hours state machine
+(`test_application.py`), the regime/trigger/filter engine
+(`test_regime.py`, `test_triggers.py`, `test_filters.py`,
+`test_v2_setup_strategy.py`), the daily circuit breaker
+(`test_account_state.py`, additions to `test_risk_engine.py`), the M12
+idea-clustering/entry-mode/partial-exit additions (`test_entry_triggers.py`,
+further additions to `test_risk_engine.py`), backtest export/progress/stop
+(additions to `test_backtest_engine.py`/`test_api.py`), and the M5
+2-decimal output rule (`test_formatting.py`). Integration tests
+(`tests/integration/`) are skipped by default since they require real
+Postgres/Redis instances -- `test_storage_integration.py` covers storage
+connectivity, `test_kite_market_data_integration.py` covers the
+instrument-sync/tick-pipeline/option-chain flows,
+`test_strategy_engine_integration.py` covers the `TickProcessor ->
+MarketDataService -> StrategyEngine -> Signal -> PostgreSQL/Redis` flow
+end-to-end (with a fake `Broker`/scripted strategy, never the real Kite
+API), and `test_risk_engine_integration.py` covers the `Signal -> RiskEngine
+-> RiskDecision/TradeIntent -> PostgreSQL/Redis` flow end-to-end. Opt in
+with:
 
 ```powershell
 $env:RUN_INTEGRATION_TESTS = "1"
@@ -59,7 +68,7 @@ pytest tests/integration
 Useful variations:
 
 ```powershell
-pytest -k risk_manager       # run a subset of tests by keyword
+pytest -k circuit_breaker    # run a subset of tests by keyword
 pytest --cov-report=html     # generate an HTML coverage report in htmlcov/
 ruff check .                 # lint
 ```

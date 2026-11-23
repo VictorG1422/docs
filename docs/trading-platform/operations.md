@@ -134,12 +134,11 @@ watchlist uses a long-only swing profile: daily candles, CNC delivery,
 ATR stop at `2.0x` with a `5%` fallback when ATR history is insufficient,
 and a target at `2R`. An equity SELL closes an existing long; it never
 opens a short. Swing positions are retained across paper-process restarts.
-For daily candles, technical scoring uses price versus EMA(200) for its
-macro gate and historical daily volume for flow confirmation; intraday VWAP
-is not used as a daily gate. Confirmation candles only count when their
-interval is strictly higher than the primary interval, so the default
-intraday confirmation set does not add confirmation to a daily equity
-strategy.
+For daily candles, the regime state machine and triggers run on the daily
+bars themselves; F2 (higher-timeframe confirmation) falls back to a
+pass-through when no strictly-higher confirmation timeframe is configured,
+since the default intraday confirmation set (15m/30m/60m/4h/daily) doesn't
+add confirmation above a daily primary interval.
 
 The profile values are editable under Trading & risk settings and are
 stored in PostgreSQL. Run the migrations before starting this version;
@@ -150,19 +149,22 @@ orders, and market halts can result in a worse exit or an unclosed
 position. Validate the strategy and operating procedures before any live
 use; tests do not constitute production approval.
 
-## Daily pivot context
+## Confirmation timeframes and diagnostics persistence
 
 Configured confirmation timeframes default to 15m, 30m, 60m, 4h, and daily.
 The 4h candles are resampled from hourly history because Kite has no native
 240-minute historical interval. Higher-timeframe candles align to the NSE
-09:15 IST open; missing history is omitted rather than fabricated. Prior-day
-open bias and confirmed high/low breaks have separate scoring weights and use
-only a strictly earlier IST session's completed daily candle.
+09:15 IST open; missing history is omitted rather than fabricated. Only F2
+(higher-timeframe confirmation) reads a confirmation timeframe (60m by
+default, or daily if `SCORING_HTF_CONFIRMATION_USES_DAILY` is set), using
+only a strictly earlier IST session's completed daily candle when that's
+the configured reference.
 
-The `Persist every scoring evaluation` setting defaults off; near misses are
-still logged. Enabling it stores below-threshold evaluations in the Signals
-page audit table after the trading process restarts. Zero-contribution
-components are not stored or displayed.
+The `Persist every scoring evaluation` setting defaults off; every
+evaluation (signal or no-signal) is still logged. Enabling it stores every
+evaluation's full diagnostic snapshot (regime state, trigger results,
+filter results) in the Signals page audit table after the trading process
+restarts.
 
 Completed 5-minute and higher candles are persisted for configured
 signal/gate instruments to support dashboard inspection and signal audits.
@@ -206,36 +208,26 @@ reclaims deleted rows without long exclusive locks.
 `technical_scoring` calculates classic pivots once from the previous
 completed 1440-minute session candle. It records `P`, `BC`/`TC`, `R1`-`R3`,
 `S1`-`S3`, CPR bounds/width, and the source session date in the signal
-snapshot. Price above/below the CPR contributes one bullish/bearish
-`pivot_context` score (default weight 8); crossing beyond R1/S1 increases
-that feature's strength. Displayed pivot/CPR levels are rounded to two
-decimal places; calculations retain full Decimal precision. Price inside
-the CPR is neutral. R2/R3/S2/S3 are
-context only, not automatic targets or exits. Set
-`SCORING_WEIGHT_PIVOT_CONTEXT=0` in dashboard score settings to disable its
-score contribution. If prior daily history is unavailable or invalid, the
-feature is omitted and existing scoring continues. Backtests use only
+snapshot for diagnostics, and uses the CPR bounds to decide whether a gap
+is significant enough for T2 (gap resolution) to treat it as a genuine
+gap versus noise. Displayed pivot/CPR levels are rounded to two decimal
+places; calculations retain full Decimal precision. If prior daily history
+is unavailable or invalid, the feature is omitted. Backtests use only
 daily candles from earlier IST session dates; the same-day daily bar is
 never used to create that day's pivot levels.
 
-Intraday technical scoring also requires both macro gates: price must be
-above both EMA(200) and session VWAP for bullish bias, or below both for
-bearish; mixed/equal alignment blocks the signal. Daily scoring uses price
-versus EMA(200) without intraday VWAP. Positive-strength OI buildup or
-volume spike is required as flow confirmation. Near-miss scores from 40
-through 64 or -40 through -64 persist component, gate, and pivot details by
-default. Migration `0018` creates diagnostics storage;
-`0019` updates legacy default rows, and `0020` persists the requested score
-weights with an audit entry while leaving thresholds and other settings
-unchanged.
+F1 (flow) requires directional OI buildup or a qualifying volume spike as
+confirmation; every evaluation's regime state, trigger results, and filter
+results persist to the diagnostics table by default.
 
-In OPTIONS mode, the gates use a synchronized, unexpired FUT contract,
-because index candles do not provide OI and may have no usable volume. Its
-close, EMA/VWAP, OI, and volume supply only macro/flow confirmation; the
-index remains the pattern-scoring and signal source. Live and paper entries
-wait for a matching futures candle, and missing or misaligned reference data
-fails closed. Sync NFO futures before starting the OPTIONS runtime or a
-backtest; the backtest fails validation if no contract covers the full run.
+In OPTIONS mode, F1's OI/volume check and T3's OI-buildup confirmation use
+a synchronized, unexpired FUT contract, because index candles do not
+provide OI and may have no usable volume. Its OI and volume supply only
+flow confirmation; the index remains the pattern/trigger source and the
+signal source. Live and paper entries wait for a matching futures candle,
+and missing or misaligned reference data fails closed. Sync NFO futures
+before starting the OPTIONS runtime or a backtest; the backtest fails
+validation if no contract covers the full run.
 For live protective monitoring, broker positions are refreshed during the
 recovery cycle rather than fetched on every tick. If that snapshot is older
 than 30 seconds, the runtime withholds protective action until it can refresh

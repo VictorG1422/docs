@@ -7,15 +7,15 @@ API, with a full backtesting engine and dashboard built in.
 Code repository: [VictorG1422/trading_platform](https://github.com/VictorG1422/trading_platform)
 
 !!! note "Current status"
-    The application runs two configured strategies end to end —
-    `v1_score` (a weighted pattern-confluence scorer) and `v2_setup` (a
-    regime-state-machine-and-trigger system) — plus a `no_op` strategy that
-    deliberately disables signal generation. Both are implemented and
+    The application runs one configured strategy end to end — a
+    regime-state-machine-and-trigger system (regime detection, independent
+    entry triggers, and entry filters) — plus a `no_op` strategy that
+    deliberately disables signal generation. It is implemented and
     covered by the automated test suite. That is **not** the same as
     "approved for live trading with real money": see
     [Safety Mechanisms & Roadmap](safety-and-limitations.md) for exactly
-    what independent validation is still expected before you trust either
-    one with capital you can't afford to lose. Everything ships
+    what independent validation is still expected before you trust it
+    with capital you can't afford to lose. Everything ships
     safe-by-default: paper trading, with live order execution gated off
     until you explicitly flip three separate switches (see
     [How-To: Going live](how-to.md#how-to-go-live-placing-real-orders--read-this-first)).
@@ -25,9 +25,9 @@ Code repository: [VictorG1422/trading_platform](https://github.com/VictorG1422/t
 [**Flow, Strategy Logic & Diagrams**](flow-and-examples.md) explains, in
 plain language with diagrams, what happens from the moment the app starts
 to the moment a trade is opened, rejected, or double-checked against the
-broker — including how the two strategies (`v1_score`/`v2_setup`) actually
-decide to buy or sell, and how the risk engine's ordered checklist works.
-Read that page before anything else below.
+broker — including how the strategy actually decides to buy or sell, and
+how the risk engine's ordered checklist works. Read that page before
+anything else below.
 
 **Want to actually run something?** Skip straight to the
 [**How-To Guide**](how-to.md) — step-by-step instructions for running a
@@ -51,5 +51,4 @@ fastest way to answer things like "why didn't my strategy trade today?" or
 | [Operations](operations.md) | Running in paper mode, Docker, PostgreSQL/Redis setup, migrations, scripts, logging. |
 | [Testing](testing.md) | How to run the unit and integration test suites. |
 | [Safety Mechanisms & Roadmap](safety-and-limitations.md) | Built-in safety guarantees, and what's left to build. |
-| [Strategy Specification](strategy-specification.md) | The fill-in-the-blanks template for specifying a brand-new, custom strategy (separate from the two built-in ones). |
-| [History](history/index.md) | How this system was actually built, round by round — original spec prompts, kept verbatim for provenance. |
+| [Strategy Specification](strategy-specification.md) | The fill-in-the-blanks template for specifying a brand-new, custom strategy (separate from the built-in one). |

@@ -74,9 +74,7 @@ background supervisor thread inside `Application` drives
 (and `ERROR_RETRY`) for the life of the process -- the process itself
 never exits because NSE is closed.
 
-Two strategies are selectable: `technical_scoring`, configured via
-`scoring_strategy_mode` as either `v1_score` (the original multi-timeframe
-pattern/indicator confluence scorer) or `v2_setup` (a regime-state-machine
+Two strategies are selectable: `technical_scoring` (a regime-state-machine
 plus independent-trigger/filter system with no score threshold at all);
 and `no_op`, which deliberately disables signal generation. Neither
 implementation, nor a passing test suite, is a claim that either strategy
@@ -154,7 +152,7 @@ trading_platform/
 │   ├── app_state.py             # AppState enum + status store (GET /api/status)
 │   ├── broker/                  # Kite abstraction (REST + WebSocket)
 │   ├── market_data/             # tick processing, instruments, option chain
-│   ├── strategy/                # BaseStrategy, v1_score scoring, v2_setup regime/triggers/filters
+│   ├── strategy/                # BaseStrategy, regime state machine, triggers/filters
 │   ├── execution/                # paper/live execution, order execution engine
 │   ├── risk/                    # risk engine, policy, position sizing, circuit breaker
 │   ├── backtest/                # backtest engine, portfolio, export, entry-trigger watcher

@@ -3,26 +3,20 @@
 Short, direct answers. Each links to the page with the full explanation.
 
 **Why didn't my strategy take a trade today?**
-Almost always one of: the regime/macro gate didn't agree with a direction
-(no trend, or `v2_setup` regime was CHOP/NEUTRAL), no trigger fired
-(`v2_setup`) or the score never crossed the threshold (`v1_score`), a
-filter blocked it (`v2_setup`), or it fired and was then rejected by the
-risk engine (check the signal's risk decision — every rejection has a
-`reason`). See [Flow, Strategy Logic & Diagrams](flow-and-examples.md#3-how-v1_score-decides-to-trade-the-original-strategy)
-for both strategies' logic, and the dashboard's Risk Decisions page for
-the exact reason a specific signal was blocked.
+Almost always one of: the regime didn't agree with a direction (CHOP or
+NEUTRAL), no trigger fired, a filter blocked it, or it fired and was then
+rejected by the risk engine (check the signal's risk decision — every
+rejection has a `reason`). See
+[Flow, Strategy Logic & Diagrams](flow-and-examples.md#3-how-the-strategy-decides-to-trade)
+for the full logic, and the dashboard's Risk Decisions page for the exact
+reason a specific signal was blocked.
 
-**What's the difference between `v1_score` and `v2_setup`, and which
-should I use?**
-`v1_score` is the original weighted pattern-confluence scorer — many
-indicators/patterns vote, weighted, and a trade fires once the total score
-crosses a threshold. `v2_setup` has no score at all — it's a regime state
-machine (TREND/TREND_AGING/CHOP/NEUTRAL) gating three independent entry
-triggers and five independent filters, each separately toggleable. Neither
-is "the correct" one; back-test both against your own instruments and
-compare. See [section 3-4 of Flow, Strategy Logic & Diagrams](flow-and-examples.md#3-how-v1_score-decides-to-trade-the-original-strategy)
-for the full logic of each. Switch between them with the `strategy_mode`
-setting (**Regime, Triggers & Filters (v2)** group on the settings page).
+**How does the strategy decide to trade?**
+It's a regime state machine (TREND/TREND_AGING/CHOP/NEUTRAL) gating three
+independent entry triggers and five independent filters, each separately
+toggleable — there's no weighted score anywhere in this path. See
+[section 3 of Flow, Strategy Logic & Diagrams](flow-and-examples.md#3-how-the-strategy-decides-to-trade)
+for the full logic.
 
 **What happens if I stop a backtest halfway through?**
 It isn't cancelled or discarded. The engine finishes the candle it's on,

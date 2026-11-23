@@ -83,10 +83,7 @@ no AWS override for database-managed strategy or scoring values.
 | `BACKTEST_CANDLE_INTERVAL_MINUTES` / `BACKTEST_INITIAL_CAPITAL` | `5` / `100000` | PostgreSQL dashboard settings for backtest interval and starting capital. |
 | `OPTIONS_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: synchronized underlying EQ instrument-token IDs. The selected index/stock EQ candles generate signals; the corresponding CE/PE contract is traded. |
 | `EQUITY_WATCHLIST` | *(empty)* | PostgreSQL dashboard setting: synchronized tradable cash-EQ instrument-token IDs. Each selected instrument generates signals and is itself traded. |
-| `SCORING_WEIGHT_<PATTERN_NAME>` | *(unset)* | PostgreSQL dashboard setting per pattern/indicator; overrides that entry in `scoring._DEFAULT_WEIGHTS`. |
-| `SCORING_BUY_THRESHOLD` / `SCORING_SELL_THRESHOLD` | *(unset)* | PostgreSQL dashboard settings for `ScoringConfig` buy/sell thresholds (defaults `50`). |
 | `ORDER_EXECUTION_ENABLED` | `false` | Trusted environment/`.env` only; not dashboard-editable. Live submission additionally requires `APP_ENV=production`, `APP_MODE=live`, and valid Kite credentials. |
-| `SCORING_STRATEGY_MODE` | `v1_score` | Which configured strategy logic to run: `v1_score` (original weighted scoring) or `v2_setup` (regime/trigger/filter system, no score threshold). |
 | `RISK_DAILY_CIRCUIT_BREAKER_ENABLED` | `true` | Stops (or halves, via `RISK_CIRCUIT_BREAKER_ACTION`) new entries for the rest of the day after `RISK_CONSECUTIVE_LOSS_LIMIT` (default `2`) consecutive closed losing trades. |
 | `HEARTBEAT_INTERVAL_SECONDS` | `1800` | How often the market-hours supervisor logs a heartbeat while idle/waiting. |
 | `MARKET_SUPERVISOR_POLL_SECONDS` | `15` | How often the market-hours supervisor checks for an open/close transition. |
@@ -163,11 +160,9 @@ read from this secret.
 
 No other secret keys are applied to `Settings`. In particular, AWS keys
 such as `OPTIONS_WATCHLIST`, `EQUITY_WATCHLIST`, `APP_MODE`,
-`RISK_*`, or `SCORING_*` are ignored. Configure scoring weights in the
-dashboard with `SCORING_WEIGHT_<PATTERN_NAME>`; unspecified weights use
-the strategy defaults. If the AWS call fails or its body is not valid
-JSON, `get_settings()` raises `ConfigurationError` instead of silently
-using missing credentials.
+`RISK_*`, or `SCORING_*` are ignored. If the AWS call fails or its body is
+not valid JSON, `get_settings()` raises `ConfigurationError` instead of
+silently using missing credentials.
 
 For an `OPTIONS_WATCHLIST` underlying, the cash/index instrument is the
 signal source: scoring analyzes its candles and price, then bullish

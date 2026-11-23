@@ -105,13 +105,12 @@ over:
   (structured JSON) and exportable via the Run Log export sheet; a
   dedicated streaming/virtualized-scroll UI panel for tailing a running
   backtest's log in the browser hasn't been built.
-- **Strategy validation and production approval remain open.** Both
-  `v1_score` and `v2_setup` are implemented and test-covered, but neither's
-  thresholds/parameters have been independently validated against real
-  market performance, paper-traded for a meaningful stretch, and
-  operationally reviewed. Implementation + passing tests is not the same
-  claim as "ready to risk real capital." See
-  [Strategy Specification](strategy-specification.md).
+- **Strategy validation and production approval remain open.** The
+  strategy is implemented and test-covered, but its thresholds/parameters
+  have not been independently validated against real market performance,
+  paper-traded for a meaningful stretch, and operationally reviewed.
+  Implementation + passing tests is not the same claim as "ready to risk
+  real capital." See [Strategy Specification](strategy-specification.md).
 - **Broker capital/margin** (`AccountState.available_capital`/
   `used_capital`/`available_margin`) remain `None` — reconciliation
   compares orders and net positions, not broker capital or margin.
@@ -126,11 +125,10 @@ over:
 - **Reconciliation never generates a signal, sizes a position, or places a
   corrective order.** An unresolved broker/local mismatch is always left
   `REQUIRES_MANUAL_ACTION` — a human has to look at it.
-- **The literal "28 trades / net +15,203 / profit factor 1.38" `v1_score`
-  baseline, and the specific Nov 2/Nov 16 circuit-breaker fixtures, are the
-  project owner's own prior manual analysis** — they are not numbers this
+- **The specific Nov 2/Nov 16 circuit-breaker fixtures are the project
+  owner's own prior manual analysis** — they are not numbers this
   repository's test suite reproduces (there's no historical market data
-  for those exact dates/trades in this codebase). The underlying mechanisms
-  (the scorer, the circuit breaker) are covered by synthetic, repeatable
-  tests instead; reproducing the literal historical numbers would need the
-  owner's own trade/candle data supplied and verified separately.
+  for those exact dates/trades in this codebase). The underlying mechanism
+  (the circuit breaker) is covered by synthetic, repeatable tests instead;
+  reproducing the literal historical numbers would need the owner's own
+  trade/candle data supplied and verified separately.

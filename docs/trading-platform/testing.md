@@ -26,9 +26,11 @@ use the same in-memory SQLite/`fakeredis`/fake-broker doubles -- never
 real Postgres/Redis/Kite. Phase 7 strategy/signal tests
 (`tests/unit/test_strategy_engine.py`, `test_no_op_strategy.py`,
 `test_signal_factory.py`, `test_signal_validator.py`, `test_patterns.py`,
-`test_scoring.py`, `test_technical_scoring_strategy.py`) use the same
-doubles plus a scripted test-only `BaseStrategy` (never a real trading
-strategy). Phase 8 risk-engine tests (`tests/unit/test_risk_policy.py`,
+`test_gap_context.py`) use the same doubles plus a scripted test-only
+`BaseStrategy` (never a real trading strategy). The regime/trigger/filter
+engine itself has its own focused suites (`test_regime.py`,
+`test_triggers.py`, `test_filters.py`, `test_entry_triggers.py`,
+`test_v2_setup_strategy.py`). Phase 8 risk-engine tests (`tests/unit/test_risk_policy.py`,
 `test_position_sizer.py`, `test_account_state.py`, `test_risk_state_store.py`,
 `test_stop_loss.py`, `test_risk_engine.py`) use the same in-memory SQLite/`fakeredis` doubles
 plus a scripted `AccountStateProvider` test double (never a real broker/
@@ -36,19 +38,16 @@ account balance). The dashboard and editable-settings tests (`tests/unit/test_ap
 FastAPI's `TestClient` with every dependency overridden -- an in-memory
 SQLite session (its own fixture, not the shared one, since `TestClient`
 runs requests on a different thread) and trivial fakes for Postgres/
-Redis/Kite; never a real connection. They cover normalized scores,
-metrics, protected settings writes, validation, auditing, and runtime
-override precedence, plus the Backtest tab's calendar/Run/Stop/progress/
-export endpoints. The most recent upgrade round added its own focused
-suites for the application market-hours state machine
-(`test_application.py`), the regime/trigger/filter engine
-(`test_regime.py`, `test_triggers.py`, `test_filters.py`,
-`test_v2_setup_strategy.py`), the daily circuit breaker
+Redis/Kite; never a real connection. They cover metrics, protected
+settings writes, validation, auditing, and runtime override precedence,
+plus the Backtest tab's calendar/Run/Stop/progress/export endpoints.
+Other focused suites cover the application market-hours state machine
+(`test_application.py`), the daily circuit breaker
 (`test_account_state.py`, additions to `test_risk_engine.py`), the M12
-idea-clustering/entry-mode/partial-exit additions (`test_entry_triggers.py`,
-further additions to `test_risk_engine.py`), backtest export/progress/stop
-(additions to `test_backtest_engine.py`/`test_api.py`), and the M5
-2-decimal output rule (`test_formatting.py`). Integration tests
+idea-clustering/entry-mode/partial-exit additions (further additions to
+`test_risk_engine.py`), backtest export/progress/stop (additions to
+`test_backtest_engine.py`/`test_api.py`), and the M5 2-decimal output rule
+(`test_formatting.py`). Integration tests
 (`tests/integration/`) are skipped by default since they require real
 Postgres/Redis instances -- `test_storage_integration.py` covers storage
 connectivity, `test_kite_market_data_integration.py` covers the

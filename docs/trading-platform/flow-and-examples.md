@@ -1,8 +1,8 @@
 # Flow, Strategy Logic & Diagrams
 
 > **New to this project? Start here.** This page explains, in plain
-> language, what happens when the application runs, how the two built-in
-> strategies decide to buy or sell, how a signal turns into (or is
+> language, what happens when the application runs, how the built-in
+> strategy decides to buy or sell, how a signal turns into (or is
 > refused) a trade, and walks through concrete worked examples. The
 > [Architecture page](architecture.md) and the
 > [Module Reference](module-reference.md) go deeper into *why* each piece
@@ -11,8 +11,7 @@
 
 ## 1. The process never exits because the market is closed
 
-As of this project's most recent upgrade round, the process has exactly
-two startup modes — `APP_MODE=paper` or `APP_MODE=live` (there is no
+The process has exactly two startup modes — `APP_MODE=paper` or `APP_MODE=live` (there is no
 longer a "backtest" startup mode; backtests are an on-demand job you
 trigger from the dashboard against a *running* paper/live process — see
 section 6). Whichever mode you start in, the app runs a small state
@@ -65,11 +64,8 @@ flowchart TD
     A[Kite WebSocket: raw price tick] --> B[TickProcessor: clean & validate]
     B --> C[MarketState: latest price per instrument]
     B --> D[CandleAggregator: build 1m / 5m / 15m candles]
-    D -->|candle closes| E{Strategy: v1_score or v2_setup?}
-    E -->|v1_score| F1[TechnicalScorer: weighted pattern confluence]
-    E -->|v2_setup| F2[Regime state + Triggers T1-T3 + Filters F1-F5]
-    F1 -->|BUY or SELL| G[RiskEngine: ordered gauntlet of checks]
-    F2 -->|BUY or SELL| G
+    D -->|candle closes| E[Strategy: Regime state + Triggers T1-T3 + Filters F1-F5]
+    E -->|BUY or SELL| G[RiskEngine: ordered gauntlet of checks]
     G -->|approved: TradeIntent| H[OrderExecutionEngine: entry-pause + execution gates]
     H --> I{APP_MODE}
     I -->|paper| J[PaperExecutionAdapter: simulated fill]
@@ -91,34 +87,11 @@ A few rules hold true at every stage:
   about to fill on — it fills at the *next* bar's open (or later, under a
   conditional entry mode — see section 5).
 
-## 3. How `v1_score` decides to trade (the original strategy)
+## 3. How the strategy decides to trade
 
-`v1_score` scores every pattern/indicator match (candlestick patterns,
-RSI/MACD/EMA-cross/Bollinger/VWAP, gap context, opening-range breakout,
-pivot context, prior-day levels, OI buildup, volume spikes) on a
-`-100..100` scale. Patterns are weighted above pure indicators by
-default; the exact same pattern set is also evaluated on every configured
-confirmation timeframe, at a reduced weight. A `BUY` fires once the total
-score reaches the configured buy threshold (default 50); `SELL` the
-mirror image. Two things can still veto a directionally-qualifying score:
-
-- **The regime/macro gate.** Price, EMA(200), and session VWAP must agree
-  on direction, and the market must be in a `TREND` regime (not choppy) —
-  see section 4 for what "regime" means; `v1_score` always used this gate,
-  it's just defined in the same shared module now.
-- **Higher-timeframe conflict.** If any configured confirmation timeframe's
-  own EMA9/21 trend disagrees with the proposed direction, the signal is
-  vetoed outright.
-
-`v1_score` is deliberately unchanged by the most recent upgrade round —
-every output is byte-identical to before, so a strategy you already
-validated keeps behaving exactly the same way.
-
-## 4. How `v2_setup` decides to trade (the newer strategy)
-
-`v2_setup` throws out the weighted score entirely — **there is no score
-threshold anywhere in this path.** Instead it's a regime-gated trigger
-system, evaluated fresh on every completed candle:
+There is no weighted score anywhere in this path — **a trigger firing is
+a boolean fact, not a point contribution.** The strategy is a
+regime-gated trigger system, evaluated fresh on every completed candle:
 
 ```mermaid
 flowchart TD
@@ -183,15 +156,9 @@ choppiness index, directional efficiency, and an ATR percentile:
 
 Every regime state, trigger result, and filter result is independently
 toggleable from the dashboard's settings page (**Regime, Triggers &
-Filters (v2)** group) so you can A/B test variants without touching code.
+Filters** group) so you can A/B test variants without touching code.
 
-**Which should you use?** `v1_score` is the longer-validated, confluence-
-style approach; `v2_setup` is the newer regime/trigger approach with finer-
-grained, independently-testable controls. Neither is "the right answer" —
-pick based on your own backtesting, and see the FAQ for more on switching
-between them.
-
-## 5. The risk engine: an ordered gauntlet, not a single check
+## 4. The risk engine: an ordered gauntlet, not a single check
 
 Every approved signal must pass every one of these checks, in this exact
 order — the first failure stops the pipeline right there and is recorded
@@ -208,17 +175,22 @@ flowchart LR
     R --> S[TradeIntent: APPROVED]
 ```
 
-Key additions from the most recent upgrade round:
+Notable checks in that pipeline:
 
 - **Idea clustering** — entries within a configurable window (default 20
   minutes) on the same underlying + direction count as one "idea"; by
   default only one entry per idea is allowed (the old unlimited-pyramiding
   behavior is still available behind a flag).
 - **Daily circuit breaker** (see diagram below).
-- **Per-idea and total open-risk caps** — in addition to the existing
-  per-trade/exposure limits, the total risk (entry-to-stop distance ×
-  quantity) across one idea, and across every open position account-wide,
-  each has its own percent-of-capital ceiling.
+- **Idea risk budget** — the total risk (entry-to-stop distance ×
+  quantity) across every entry in one idea cluster may not exceed
+  `RISK_MAX_RISK_PER_TRADE` — the same absolute rupee limit already used
+  to size a single trade, reused here as the cluster-wide budget so
+  there's one number to edit, not a separate percent-of-capital setting.
+- **Total open-risk cap** — total risk summed across every currently-open
+  position, account-wide, has its own percent-of-capital ceiling
+  (`RISK_TOTAL_OPEN_RISK_CAP_PERCENT`), in addition to the per-trade limit
+  above.
 
 ### The daily circuit breaker
 
@@ -248,7 +220,7 @@ the dashboard's risk-decisions table.
 > those exact dates baked into this repository). The mechanism itself is
 > covered by synthetic, repeatable tests instead.
 
-## 6. Worked example: running a backtest from the dashboard
+## 5. Worked example: running a backtest from the dashboard
 
 Open **Backtests** in the dashboard, enter the admin token, pick a start
 and end date (presets: last 5 days / last 30 days / current month — the
@@ -303,7 +275,7 @@ formatting.round2`/`format2`); nothing about it changes what a signal
 would have done, since all of the actual decision math runs at full
 precision internally.
 
-## 7. Worked example: a trade that gets rejected
+## 6. Worked example: a trade that gets rejected
 
 Same candle, same BUY decision from the strategy — but suppose the
 account has already lost ₹4,500 today against a configured
@@ -324,7 +296,7 @@ account has already lost ₹4,500 today against a configured
 6. **No `TradeIntent` is created, no order is sent.** This is the normal,
    everyday outcome once any risk limit is configured — not a bug.
 
-## 8. Worked example: reconciliation catching a mismatch
+## 7. Worked example: reconciliation catching a mismatch
 
 Reconciliation runs independently of the pipeline above — it compares
 what PostgreSQL/Redis *believe* against what the broker actually reports,
@@ -345,7 +317,7 @@ as `BROKER_ONLY`/`REQUIRES_MANUAL_ACTION` and reconciliation stops there
 for that instrument — it is never guessed at, auto-attributed, or closed.
 A human has to look at it.
 
-## 9. Where to go next
+## 8. Where to go next
 
 - Want to actually run something? Read the [How-To Guide](how-to.md).
 - Have a quick question? Check the [FAQ](faq.md).

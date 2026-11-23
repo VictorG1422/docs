@@ -278,9 +278,9 @@ Verify the token against the synchronized database:
 
 ### Step 2 — configure and run the backtest
 
-On **Trading & risk settings** (`/risk-settings`), choose the strategy
-(`v1_score` or `v2_setup`), instrument mode, candle interval, and initial
-capital. Add the underlying instrument token(s) to the matching options or
+On **Trading & risk settings** (`/risk-settings`), choose the strategy,
+instrument mode, candle interval, and initial capital. Add the underlying
+instrument token(s) to the matching options or
 equity watchlist on **Instruments & watchlists** and save. Backtests no
 longer have their own dates on the settings page — they're entered
 per-run, directly on the **Backtests** tab. Make sure `python -m
@@ -318,7 +318,7 @@ is only a compatibility shim; it accepts no backtest arguments.
 | `409` when clicking Run | A backtest is already queued or running. | Wait for it to finish, or Stop it first — only one runs at a time. |
 | `INSUFFICIENT_CAPITAL` rejections | The selected option/equity position exceeds configured risk or exposure limits. | Review the contract and persisted risk checks in the Signals & Risk Audit export sheet before changing limits. |
 | `OUTSIDE_TRADING_WINDOW` on a signal | Intraday backtests evaluate configured windows and first/last-session guards at the simulated candle-close time in IST. Daily equity swing backtests do not apply intraday-only windows. | Check the saved window/edge settings and inspect the signal timestamp and risk reason in the export. |
-| Zero trades despite signal activity | Option contract/premium candles may be unavailable, the regime/filters may be blocking every candidate (`v2_setup`), or risk checks may reject signals. | Inspect the Candle Log and Rejected and Blocked export sheets for the exact reason on every candle. |
+| Zero trades despite signal activity | Option contract/premium candles may be unavailable, the regime/filters may be blocking every candidate, or risk checks may reject signals. | Inspect the Candle Log and Rejected and Blocked export sheets for the exact reason on every candle. |
 | `status: FAILED` | Something broke — most commonly, the database schema isn't up to date. | Run `alembic upgrade head` (see "How to update the database" below), then try again. |
 
 ## How to run paper trading
@@ -418,7 +418,7 @@ as high as that minimum.
 | Choose which indices/stocks to trade as options | `OPTIONS_WATCHLIST` | Select underlying EQ instruments in the dashboard; persisted as token IDs |
 | Choose which stocks to trade directly (no options) | `EQUITY_WATCHLIST` | Select tradable cash EQ instruments in the dashboard; persisted as token IDs |
 | Select paper or live runtime | `APP_MODE` | `paper` or `live` (no "backtest" startup mode — see [How to run a backtest](#how-to-run-a-backtest)) |
-| Switch strategy | `STRATEGY_NAME` | `technical_scoring` (then pick `scoring_strategy_mode` = `v1_score` or `v2_setup`) or `no_op` |
+| Switch strategy | `STRATEGY_NAME` | `technical_scoring` or `no_op` |
 | Stop trading after consecutive losses | `RISK_DAILY_CIRCUIT_BREAKER_ENABLED` / `RISK_CONSECUTIVE_LOSS_LIMIT` | `true` / `2` |
 | See more detail in the logs | `LOG_LEVEL` | `DEBUG` |
 

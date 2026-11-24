@@ -224,7 +224,22 @@ defaults without replacing existing DB values. `0017` caches NSE holidays,
 `0018` stores near-miss diagnostics, and `0019` updates only scoring weights
 that still match the old shipped defaults. `0020` applies the requested
 scoring weights to saved dashboard settings and records each change in the
-settings audit table without changing score thresholds.
+settings audit table without changing score thresholds. `0026` seeds default
+values for all 93 editable keys across eight groups — Trading, Equity swing,
+Risk limits, Circuit breaker, Idea clustering, Entry/exit, Scoring, and Audit
+— using `ON CONFLICT DO NOTHING`, so it never overwrites saved values.
+
+**Trading & risk settings** covers eight groups: *Trading* (mode, strategy,
+paper/backtest parameters), *Equity swing* (candle interval, ATR stop multiplier
+and fallback percentage, target ratio, execution product), *Risk limits* (per-trade
+risk, daily loss, positions, trades, exposure, quantity, premium exposure, data
+staleness limit, stop-loss points/interval), *Stop-loss & target* (method, ATR
+period/multiplier, percentage, target ratio), *Circuit breaker*, *Idea clustering*
+(cluster window, max entries per idea, legacy pyramiding toggle), *Entry/exit*
+(trailing exits, partial exit, time stop), and *Scoring* (regime thresholds,
+trigger enables, aging parameters, time windows). All values are stored in
+PostgreSQL and loaded at algorithm startup; in-flight trading is not affected
+until restart.
 
 When saving an options watchlist, the API requires the synchronized
 instrument master to contain both CE and PE contracts for at least one

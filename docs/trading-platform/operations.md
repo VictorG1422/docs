@@ -304,6 +304,14 @@ timestamped change history to `positions`. Apply `alembic upgrade head`
 before deploying this version; without them, live trailing-state updates
 cannot be persisted and the runtime will not arm a new trail.
 
+Migration `0025` applies incremental schema changes (see migration file for
+details). Migration `0026` seeds default values for all 93 `dashboard_settings`
+keys using `INSERT ... ON CONFLICT DO NOTHING`, so existing saved settings are
+never overwritten. It covers all setting groups: trading, equity swing, risk
+limits, circuit breaker, idea clustering, entry/exit, scoring, and audit flags.
+Run `alembic upgrade head` before starting this version to ensure all keys have
+defaults visible in the **Trading & risk settings** dashboard page.
+
 `alembic.ini` and `migrations/env.py` read the database URL from
 `Settings.postgres_dsn` so no separate DB URL configuration is needed.
 `migrations/env.py` sets `target_metadata = Base.metadata` (imported from
